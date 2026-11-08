@@ -4,7 +4,7 @@ Vision-guided pick-and-place of DIN-rail terminal blocks (3 widths) with the low
 SO-101 6-DoF arm: classic pipeline (calibrated camera + own IK) vs. imitation learning (ACT).
 
 ## Status
-- [ ] Phase 1: Setup (WSL2, ROS 2 Jazzy, MuJoCo, LeRobot)
+- [x] Phase 1: Setup (WSL2, ROS 2 Jazzy, MuJoCo, LeRobot)
 - [ ] Phase 2: Simulation (own FK / Jacobian IK, scripted pick-and-place)
 - [ ] Phase 3: ROS 2 (URDF/RViz, ros2_control, C++ safety monitor)
 - [ ] Phase 4: Perception (camera + hand-eye calibration, detection, 3D pick poses)
