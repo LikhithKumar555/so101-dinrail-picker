@@ -18,3 +18,11 @@ SO-101 6-DoF arm: classic pipeline (calibrated camera + own IK) vs. imitation le
 Classic pipeline (own FK + damped-least-squares IK, Cartesian straight-line motions),
 block poses from the simulator, ±1 cm / ±10° randomised supply positions:
 **60/60 blocks seated** (20 episodes × 3 widths: 5.2 / 8.2 / 12.2 mm).
+
+## Simulation result (Phase 2)
+![Scripted pick-and-place in MuJoCo](media/sim_pick_place.gif)
+
+Classic pipeline (own FK + damped-least-squares IK, Cartesian straight-line motions),
+block poses from the simulator, ±1 cm / ±10° randomised supply positions:
+**60/60 blocks seated** (20 episodes × 3 widths: 5.2 / 8.2 / 12.2 mm),
+max placement error 1.4 mm along / 0.7 mm across the rail.
