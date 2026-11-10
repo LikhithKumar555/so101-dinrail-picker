@@ -8,6 +8,9 @@
 <mujoco model="so101_dinrail">
   <include file="robotstudio_so101/so101.xml"/>
   <compiler meshdir="robotstudio_so101/assets"/>
+  <!-- More constraint-solver iterations than the robot file's default (10): with only 10,
+       small boxes resting on the thin rail flanges slowly "walk" (solver not converged). -->
+  <option iterations="50" ls_iterations="50"/>
 
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
@@ -33,14 +36,14 @@
     <geom name="table" type="plane" size="0.6 0.6 0.01" pos="0.2 0 -0.08" material="table"/>
     <geom name="riser" type="box" size="0.07 0.06 0.04" pos="-0.01 0 -0.04" material="riser"/>
 
-    <!-- TS35 x 7.5 top-hat DIN rail (EN 60715), 20 cm long, running along y.
+    <!-- TS35 x 7.5 top-hat DIN rail (EN 60715), 16 cm long, running along y.
          Cross-section: 27 mm base web, two 1 mm walls, two 5 mm flanges at 7.5 mm height. -->
     <body name="din_rail" pos="0.24 -0.05 -0.08">
-      <geom name="rail_web"      type="box" size="0.0135 0.10 0.0005" pos="0 0 0.0005" material="rail"/>
-      <geom name="rail_wall_l"   type="box" size="0.0005 0.10 0.00375" pos="-0.013 0 0.00375" material="rail"/>
-      <geom name="rail_wall_r"   type="box" size="0.0005 0.10 0.00375" pos="0.013 0 0.00375" material="rail"/>
-      <geom name="rail_flange_l" type="box" size="0.0025 0.10 0.0005" pos="-0.015 0 0.007" material="rail"/>
-      <geom name="rail_flange_r" type="box" size="0.0025 0.10 0.0005" pos="0.015 0 0.007" material="rail"/>
+      <geom name="rail_web"      type="box" size="0.0135 0.08 0.0005" pos="0 0 0.0005" material="rail"/>
+      <geom name="rail_wall_l"   type="box" size="0.0005 0.08 0.00375" pos="-0.013 0 0.00375" material="rail"/>
+      <geom name="rail_wall_r"   type="box" size="0.0005 0.08 0.00375" pos="0.013 0 0.00375" material="rail"/>
+      <geom name="rail_flange_l" type="box" size="0.0025 0.08 0.0005" pos="-0.015 0 0.007" material="rail"/>
+      <geom name="rail_flange_r" type="box" size="0.0025 0.08 0.0005" pos="0.015 0 0.007" material="rail"/>
       <!-- Target slots (block centre lines), relative to the rail centre -->
       <site name="slot_0" type="box" size="0.022 0.0015 0.0002" pos="0 -0.06 0.0076" material="slot_marker"/>
       <site name="slot_1" type="box" size="0.022 0.0015 0.0002" pos="0 -0.02 0.0076" material="slot_marker"/>
@@ -49,15 +52,15 @@
 
     <!-- Terminal blocks: 45 mm deep (x) x 45 mm high (z); widths (y) of 5.2 / 8.2 / 12.2 mm,
          typical for 2.5 / 6 / 16 mm2 feed-through blocks. Simplified to boxes. -->
-    <body name="block_w5" pos="0.20 0.06 -0.0575">
+    <body name="block_w5" pos="0.18 0.07 -0.0575">
       <freejoint name="block_w5"/>
       <geom name="block_w5" type="box" size="0.0225 0.0026 0.0225" mass="0.008" material="block"/>
     </body>
-    <body name="block_w8" pos="0.20 0.10 -0.0575">
+    <body name="block_w8" pos="0.18 0.13 -0.0575">
       <freejoint name="block_w8"/>
       <geom name="block_w8" type="box" size="0.0225 0.0041 0.0225" mass="0.012" material="block"/>
     </body>
-    <body name="block_w12" pos="0.20 0.14 -0.0575">
+    <body name="block_w12" pos="0.18 0.19 -0.0575">
       <freejoint name="block_w12"/>
       <geom name="block_w12" type="box" size="0.0225 0.0061 0.0225" mass="0.018" material="block"/>
     </body>
@@ -65,6 +68,6 @@
     <!-- Cameras: fixed overhead camera (38 cm above the table, ~0.7 mm/px at 640x480)
          for perception / synthetic data, and a front-side view for videos -->
     <camera name="overhead" pos="0.22 0.0 0.30" xyaxes="0 -1 0 1 0 0" fovy="45"/>
-    <camera name="front" pos="0.60 -0.42 0.12" xyaxes="0.740 0.673 0 -0.205 0.225 0.953" fovy="50"/>
+    <camera name="front" pos="0.72 -0.52 0.22" xyaxes="0.694 0.720 0.000 -0.201 0.194 0.960" fovy="50"/>
   </worldbody>
 </mujoco>

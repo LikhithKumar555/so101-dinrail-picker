@@ -26,10 +26,12 @@ class BlockSpec:
     supply_xy: tuple # nominal pick position on the table
 
 
+# Supply positions are 6 cm apart so the opening jaw cannot hit a neighbouring block,
+# and >= 2 cm clear of the rail end even with the +-1 cm randomisation.
 BLOCKS = (
-    BlockSpec("block_w5", 0.0052, (0.20, 0.06)),
-    BlockSpec("block_w8", 0.0082, (0.20, 0.10)),
-    BlockSpec("block_w12", 0.0122, (0.20, 0.14)),
+    BlockSpec("block_w5", 0.0052, (0.18, 0.07)),
+    BlockSpec("block_w8", 0.0082, (0.18, 0.13)),
+    BlockSpec("block_w12", 0.0122, (0.18, 0.19)),
 )
 SLOT_SITES = ("slot_0", "slot_1", "slot_2")
 
