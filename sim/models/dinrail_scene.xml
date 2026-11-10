@@ -1,0 +1,70 @@
+<!--
+  DIN-rail pick-and-place scene for the SO-101.
+  Frame convention: world = robot base frame (x forward, y left, z up).
+  The arm stands on an 8 cm riser, so the table surface is at z = -0.08 m.
+  Why the riser: with the gripper pointing straight down the TCP can only reach up to
+  z ~ +0.08 m (wrist_flex limit); lowering the table gives ~15 cm of usable height.
+-->
+<mujoco model="so101_dinrail">
+  <include file="robotstudio_so101/so101.xml"/>
+  <compiler meshdir="robotstudio_so101/assets"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <global azimuth="150" elevation="-25" offwidth="1280" offheight="960"/>
+    <quality shadowsize="8192"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="table" builtin="flat" rgb1="0.55 0.45 0.35" width="64" height="64"/>
+    <material name="table" texture="table" reflectance="0"/>
+    <material name="riser" rgba="0.15 0.15 0.15 1"/>
+    <material name="rail" rgba="0.75 0.77 0.80 1" specular="0.8" shininess="0.8"/>
+    <!-- Light grey, the usual terminal-block colour (close to RAL 7035) -->
+    <material name="block" rgba="0.80 0.80 0.76 1"/>
+    <material name="slot_marker" rgba="0.1 0.9 0.2 0.5"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0.3 -0.3 1.0" dir="-0.2 0.3 -1" diffuse="0.7 0.7 0.7" cutoff="60" exponent="1"/>
+
+    <!-- Table surface and the riser the arm is clamped to -->
+    <geom name="table" type="plane" size="0.6 0.6 0.01" pos="0.2 0 -0.08" material="table"/>
+    <geom name="riser" type="box" size="0.07 0.06 0.04" pos="-0.01 0 -0.04" material="riser"/>
+
+    <!-- TS35 x 7.5 top-hat DIN rail (EN 60715), 20 cm long, running along y.
+         Cross-section: 27 mm base web, two 1 mm walls, two 5 mm flanges at 7.5 mm height. -->
+    <body name="din_rail" pos="0.24 -0.05 -0.08">
+      <geom name="rail_web"      type="box" size="0.0135 0.10 0.0005" pos="0 0 0.0005" material="rail"/>
+      <geom name="rail_wall_l"   type="box" size="0.0005 0.10 0.00375" pos="-0.013 0 0.00375" material="rail"/>
+      <geom name="rail_wall_r"   type="box" size="0.0005 0.10 0.00375" pos="0.013 0 0.00375" material="rail"/>
+      <geom name="rail_flange_l" type="box" size="0.0025 0.10 0.0005" pos="-0.015 0 0.007" material="rail"/>
+      <geom name="rail_flange_r" type="box" size="0.0025 0.10 0.0005" pos="0.015 0 0.007" material="rail"/>
+      <!-- Target slots (block centre lines), relative to the rail centre -->
+      <site name="slot_0" type="box" size="0.022 0.0015 0.0002" pos="0 -0.06 0.0076" material="slot_marker"/>
+      <site name="slot_1" type="box" size="0.022 0.0015 0.0002" pos="0 -0.02 0.0076" material="slot_marker"/>
+      <site name="slot_2" type="box" size="0.022 0.0015 0.0002" pos="0 0.02 0.0076" material="slot_marker"/>
+    </body>
+
+    <!-- Terminal blocks: 45 mm deep (x) x 45 mm high (z); widths (y) of 5.2 / 8.2 / 12.2 mm,
+         typical for 2.5 / 6 / 16 mm2 feed-through blocks. Simplified to boxes. -->
+    <body name="block_w5" pos="0.20 0.06 -0.0575">
+      <freejoint name="block_w5"/>
+      <geom name="block_w5" type="box" size="0.0225 0.0026 0.0225" mass="0.008" material="block"/>
+    </body>
+    <body name="block_w8" pos="0.20 0.10 -0.0575">
+      <freejoint name="block_w8"/>
+      <geom name="block_w8" type="box" size="0.0225 0.0041 0.0225" mass="0.012" material="block"/>
+    </body>
+    <body name="block_w12" pos="0.20 0.14 -0.0575">
+      <freejoint name="block_w12"/>
+      <geom name="block_w12" type="box" size="0.0225 0.0061 0.0225" mass="0.018" material="block"/>
+    </body>
+
+    <!-- Cameras: fixed overhead camera (38 cm above the table, ~0.7 mm/px at 640x480)
+         for perception / synthetic data, and a front-side view for videos -->
+    <camera name="overhead" pos="0.22 0.0 0.30" xyaxes="0 -1 0 1 0 0" fovy="45"/>
+    <camera name="front" pos="0.60 -0.42 0.12" xyaxes="0.740 0.673 0 -0.205 0.225 0.953" fovy="50"/>
+  </worldbody>
+</mujoco>
