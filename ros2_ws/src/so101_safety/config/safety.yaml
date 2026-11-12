@@ -1,0 +1,13 @@
+safety_monitor:
+  ros__parameters:
+    check_rate_hz: 20.0
+    controllers_to_stop: [arm_controller, gripper_controller]
+    load_warn: 0.60        # fraction of max torque
+    load_fault: 0.85
+    load_hold_s: 0.5
+    temp_warn_c: 55.0      # STS3215 datasheet allows up to ~70 C; we stop well before
+    temp_fault_c: 65.0
+    voltage_min_v: 6.0
+    voltage_max_v: 13.0
+    timeout_s: 0.5
+    startup_timeout_s: 5.0
