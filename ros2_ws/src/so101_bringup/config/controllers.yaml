@@ -1,0 +1,35 @@
+# Controller manager: runs the read -> update controllers -> write loop at update_rate.
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    gripper_controller:
+      type: position_controllers/JointGroupPositionController
+
+# Follows time-stamped joint trajectories (FollowJointTrajectory action), interpolating between
+# waypoints with splines and checking tolerances on the way and at the goal.
+arm_controller:
+  ros__parameters:
+    joints: [shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 0.5
+      shoulder_pan:  {trajectory: 0.2, goal: 0.02}
+      shoulder_lift: {trajectory: 0.2, goal: 0.02}
+      elbow_flex:    {trajectory: 0.2, goal: 0.02}
+      wrist_flex:    {trajectory: 0.2, goal: 0.02}
+      wrist_roll:    {trajectory: 0.2, goal: 0.02}
+
+# The gripper just takes a target angle: publish to /gripper_controller/commands
+gripper_controller:
+  ros__parameters:
+    joints: [gripper]

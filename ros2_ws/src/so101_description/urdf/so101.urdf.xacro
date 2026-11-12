@@ -1,7 +1,9 @@
 <?xml version="1.0"?>
-<!-- Top-level robot description. Step 3.2 adds the ros2_control block here. -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="so101">
+  <xacro:arg name="use_mock_hardware" default="true"/>
+
   <xacro:include filename="$(find so101_description)/urdf/so101_arm.urdf"/>
+  <xacro:include filename="$(find so101_description)/urdf/so101.ros2_control.xacro"/>
 
   <!-- Our tool centre point (TCP). It is the same frame as the "gripperframe" site in the
        MuJoCo model that our IK and pick-and-place use. The official URDF's own
@@ -14,4 +16,6 @@
     <child link="tcp_link"/>
     <origin xyz="0.012 -0.000218 -0.098127" rpy="0 1.5708 0"/>
   </joint>
+
+  <xacro:so101_ros2_control use_mock_hardware="$(arg use_mock_hardware)"/>
 </robot>

@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<!-- ros2_control description: which joints exist, which interfaces they offer, and which
+     hardware plugin talks to them. Only the <plugin> changes between simulation and the
+     real arm (Phase 5): the controllers above it stay exactly the same. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="so101_joint" params="name lower upper initial">
+    <joint name="${name}">
+      <command_interface name="position">
+        <param name="min">${lower}</param>
+        <param name="max">${upper}</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">${initial}</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="so101_ros2_control" params="use_mock_hardware">
+    <ros2_control name="so101_system" type="system">
+      <hardware>
+        <xacro:if value="${use_mock_hardware}">
+          <!-- Fake hardware: every commanded position is instantly reported back as the state -->
+          <plugin>mock_components/GenericSystem</plugin>
+        </xacro:if>
+        <xacro:unless value="${use_mock_hardware}">
+          <!-- Phase 5: the Feetech STS3215 serial-bus hardware interface goes here -->
+          <plugin>mock_components/GenericSystem</plugin>
+        </xacro:unless>
+      </hardware>
+      <!-- Limits [rad] are the URDF joint limits; initial values = the folded 'park' pose -->
+      <xacro:so101_joint name="shoulder_pan"  lower="-1.91986" upper="1.91986" initial="0.0"/>
+      <xacro:so101_joint name="shoulder_lift" lower="-1.74533" upper="1.74533" initial="-1.745"/>
+      <xacro:so101_joint name="elbow_flex"    lower="-1.69"    upper="1.69"    initial="-1.658"/>
+      <xacro:so101_joint name="wrist_flex"    lower="-1.65806" upper="1.65806" initial="0.262"/>
+      <xacro:so101_joint name="wrist_roll"    lower="-2.74385" upper="2.84121" initial="0.0"/>
+      <xacro:so101_joint name="gripper"       lower="-0.174533" upper="1.74533" initial="0.0"/>
+    </ros2_control>
+  </xacro:macro>
+</robot>
