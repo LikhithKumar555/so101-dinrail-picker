@@ -1,0 +1,62 @@
+image_width: 1280
+image_height: 720
+camera_name: laptop_webcam
+camera_matrix:
+  rows: 3
+  cols: 3
+  data:
+  - 967.5402731362941
+  - 0.0
+  - 635.5728376444231
+  - 0.0
+  - 967.3895077274017
+  - 368.6563725547179
+  - 0.0
+  - 0.0
+  - 1.0
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data:
+  - 0.07900906422802263
+  - -0.27063956564365443
+  - -0.0016649309993956316
+  - -0.004999272087709696
+  - 0.14593974831503395
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+projection_matrix:
+  rows: 3
+  cols: 4
+  data:
+  - 967.5402731362941
+  - 0.0
+  - 635.5728376444231
+  - 0.0
+  - 0.0
+  - 967.3895077274017
+  - 368.6563725547179
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+calibration:
+  rms_reprojection_error_px: 0.3048
+  n_images: 24
+  board_inner_corners:
+  - 9
+  - 6
+  square_size_m: 0.025

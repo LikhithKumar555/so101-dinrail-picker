@@ -8,8 +8,8 @@ version = "0.1.0"
 requires-python = ">=3.12"
 
 [tool.setuptools.packages.find]
-where = ["sim"]
-include = ["so101_sim*"]
+where = ["sim", "perception"]
+include = ["so101_sim*", "so101_perception*"]
 
 [tool.pytest.ini_options]
-testpaths = ["sim/tests"]
+testpaths = ["sim/tests", "perception/tests"]
