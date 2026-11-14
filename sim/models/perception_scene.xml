@@ -1,0 +1,22 @@
+<!--
+  Scene for generating synthetic camera images: the DIN-rail scene plus extra blocks,
+  so one image can contain 1-9 blocks (3 per width). Unused blocks are moved out of view.
+  Used only for rendering (no physics is simulated).
+-->
+<mujoco model="so101_dinrail_perception">
+  <include file="dinrail_scene.xml"/>
+  <worldbody>
+    <body name="block_w5_b" pos="2 0 0"><freejoint name="block_w5_b"/>
+      <geom name="block_w5_b" type="box" size="0.0225 0.0026 0.0225" mass="0.008" material="block"/></body>
+    <body name="block_w5_c" pos="2 0.1 0"><freejoint name="block_w5_c"/>
+      <geom name="block_w5_c" type="box" size="0.0225 0.0026 0.0225" mass="0.008" material="block"/></body>
+    <body name="block_w8_b" pos="2 0.2 0"><freejoint name="block_w8_b"/>
+      <geom name="block_w8_b" type="box" size="0.0225 0.0041 0.0225" mass="0.012" material="block"/></body>
+    <body name="block_w8_c" pos="2 0.3 0"><freejoint name="block_w8_c"/>
+      <geom name="block_w8_c" type="box" size="0.0225 0.0041 0.0225" mass="0.012" material="block"/></body>
+    <body name="block_w12_b" pos="2 0.4 0"><freejoint name="block_w12_b"/>
+      <geom name="block_w12_b" type="box" size="0.0225 0.0061 0.0225" mass="0.018" material="block"/></body>
+    <body name="block_w12_c" pos="2 0.5 0"><freejoint name="block_w12_c"/>
+      <geom name="block_w12_c" type="box" size="0.0225 0.0061 0.0225" mass="0.018" material="block"/></body>
+  </worldbody>
+</mujoco>

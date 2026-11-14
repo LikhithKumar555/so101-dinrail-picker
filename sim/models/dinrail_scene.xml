@@ -65,9 +65,10 @@
       <geom name="block_w12" type="box" size="0.0225 0.0061 0.0225" mass="0.018" material="block"/>
     </body>
 
-    <!-- Cameras: fixed overhead camera (38 cm above the table, ~0.7 mm/px at 640x480)
-         for perception / synthetic data, and a front-side view for videos -->
-    <camera name="overhead" pos="0.22 0.0 0.30" xyaxes="0 -1 0 1 0 0" fovy="45"/>
+    <!-- Cameras: fixed overhead camera 58 cm above the table - high enough that the arm can never
+         reach it - for perception / synthetic data (~0.5 mm/px at 960x720), and a front-side
+         view for videos -->
+    <camera name="overhead" pos="0.22 0.0 0.50" xyaxes="0 -1 0 1 0 0" fovy="36"/>
     <camera name="front" pos="0.72 -0.52 0.22" xyaxes="0.694 0.720 0.000 -0.201 0.194 0.960" fovy="50"/>
   </worldbody>
 </mujoco>
