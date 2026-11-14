@@ -60,11 +60,14 @@ def top_face_corners(data, body: str, width: float) -> np.ndarray:
 
 
 class SyntheticRenderer:
-    def __init__(self, width: int = 960, height: int = 720):
+    def __init__(self, width: int = 960, height: int = 720, randomize_camera: bool = True):
         self.model = mujoco.MjModel.from_xml_path(str(PERCEPTION_XML))
         self.data = mujoco.MjData(self.model)
         self.w, self.h = width, height
         self.renderer = mujoco.Renderer(self.model, height=height, width=width)
+        # hide sites (e.g. the green slot markers): a real camera would not see them
+        self.scene_option = mujoco.MjvOption()
+        self.scene_option.sitegroup[:] = 0
         self.cam = self.model.camera(CAMERA).id
         m = self.model
         self.blocks = [m.body(i).name for i in range(m.nbody) if m.body(i).name.startswith("block_")]
@@ -78,6 +81,8 @@ class SyntheticRenderer:
         self.table_mat = m.material("table").id
         self.kin = scene_kinematics()
         self._arm_poses = None
+        # False = the camera stays at its nominal (calibrated) pose, as for pose estimation
+        self.randomize_camera = randomize_camera
 
     # ------------------------------------------------------------------ randomisation
     def _arm_pose_bank(self, rng, n=40):
@@ -132,14 +137,17 @@ class SyntheticRenderer:
         d.qpos[self.qadr] = (PARK_Q if rng.random() < 0.5
                              else self._arm_poses[rng.integers(1, len(self._arm_poses))])
         # camera: position +-2 cm, height +-3 cm, small tilt, fov +-4 deg
-        m.cam_pos[self.cam] = self.cam_pos0 + rng.uniform([-0.02, -0.02, -0.03], [0.02, 0.02, 0.03])
+        cam_offset = rng.uniform([-0.02, -0.02, -0.03], [0.02, 0.02, 0.03])
         tilt = rng.normal(0, np.radians(2), 3)
         qt = np.zeros(4)
         mujoco.mju_axisAngle2Quat(qt, tilt / (np.linalg.norm(tilt) + 1e-12), np.linalg.norm(tilt))
         q = np.zeros(4)
         mujoco.mju_mulQuat(q, self.cam_quat0, qt)
-        m.cam_quat[self.cam] = q
-        m.cam_fovy[self.cam] = self.fovy0 + rng.uniform(-4, 4)
+        fovy = self.fovy0 + rng.uniform(-4, 4)
+        if self.randomize_camera:
+            m.cam_pos[self.cam] = self.cam_pos0 + cam_offset
+            m.cam_quat[self.cam] = q
+            m.cam_fovy[self.cam] = fovy
         # lighting and table colour
         m.light_diffuse[:] = self.light_diffuse0 * rng.uniform(0.4, 1.4)
         m.light_pos[:] = self.light_pos0 + rng.uniform(-0.3, 0.3, self.light_pos0.shape)
@@ -158,10 +166,10 @@ class SyntheticRenderer:
         self._randomise_world(rng)
         mujoco.mj_forward(self.model, self.data)
 
-        self.renderer.update_scene(self.data, camera=self.cam)
+        self.renderer.update_scene(self.data, camera=self.cam, scene_option=self.scene_option)
         rgb = self.renderer.render().copy()
         self.renderer.enable_segmentation_rendering()
-        self.renderer.update_scene(self.data, camera=self.cam)
+        self.renderer.update_scene(self.data, camera=self.cam, scene_option=self.scene_option)
         seg = self.renderer.render()[..., 0].copy()            # geom id per pixel
         self.renderer.disable_segmentation_rendering()
 
