@@ -105,6 +105,10 @@ class SimRobot:
         self.follow_joint_path(path, duration)
         return True
 
+    def move_joints(self, q_goal: np.ndarray, duration: float = 1.5):
+        """Joint-space move (used between 'look' and 'work' poses, where no straight line exists)."""
+        self.follow_joint_path([np.asarray(q_goal, float)], duration)
+
     def move_gripper(self, angle: float, duration: float = 0.6):
         start = self.data.ctrl[self.grip_act]
         n = int(duration / self.model.opt.timestep)
@@ -133,10 +137,16 @@ def tcp_for_block_center(center: np.ndarray, yaw: float, width: float, clearance
     return T
 
 
-def pick_and_place(robot: SimRobot, block: BlockSpec, slot: str) -> tuple[bool, str]:
-    """Run one pick-and-place. Returns (success, message)."""
+def pick_and_place(robot: SimRobot, block: BlockSpec, slot: str,
+                   T_block: np.ndarray | None = None) -> tuple[bool, str]:
+    """Run one pick-and-place. Returns (success, message).
+
+    T_block: estimated block pose (from the camera). If None, the simulator's true pose is used.
+    Success is always judged on the TRUE final block pose.
+    """
     m, d = robot.model, robot.data
-    T_block = body_pose(m, d, block.name)               # Phase 4: comes from the camera instead
+    if T_block is None:
+        T_block = body_pose(m, d, block.name)
     block_yaw = np.arctan2(T_block[1, 0], T_block[0, 0])
     cur_yaw = np.arctan2(-robot.tcp_pose_cmd()[0, 1], robot.tcp_pose_cmd()[1, 1])
     yaw = grasp_yaw(block_yaw, cur_yaw)
