@@ -49,6 +49,31 @@ def undistort_normalized(pixels: np.ndarray, K, dist, iterations: int = 50) -> n
     return cv2.undistortPoints(pixels, K, dist, R=None, P=None, criteria=crit)
 
 
+def canonical_corner_order(gray: np.ndarray, corners: np.ndarray, board: Board) -> np.ndarray:
+    """Make the corner order unique: OpenCV may return it rotated by 180 deg between images.
+
+    For intrinsic calibration this does not matter, but hand-eye calibration needs the SAME
+    board frame in every image. In our boards the square between corners (i, j) and
+    (i+1, j+1) is black when i + j is even. With cols + rows odd, a 180-degree rotation turns
+    this colouring into its negative - so we sample every inner square and reverse the order
+    if the image looks like the negative.
+    """
+    if (board.cols + board.rows) % 2 == 0:
+        return corners                          # symmetric board: order cannot be fixed
+    c = corners.reshape(-1, 2).astype(np.float64)
+    grid = np.mgrid[0:board.cols, 0:board.rows].T.reshape(-1, 2).astype(np.float64)
+    H, _ = cv2.findHomography(grid, c, 0)
+    ij = np.mgrid[0:board.cols - 1, 0:board.rows - 1].T.reshape(-1, 2)
+    centres = cv2.perspectiveTransform((ij + 0.5).reshape(-1, 1, 2).astype(np.float64), H).reshape(-1, 2)
+    h, w = gray.shape[:2]
+    xs = np.clip(np.round(centres[:, 0]).astype(int), 0, w - 1)
+    ys = np.clip(np.round(centres[:, 1]).astype(int), 0, h - 1)
+    values = gray[ys, xs].astype(np.float64)
+    expected_black = (ij.sum(axis=1) % 2) == 0
+    score = values[~expected_black].mean() - values[expected_black].mean()   # > 0: as expected
+    return corners if score >= 0 else corners[::-1].copy()
+
+
 def find_corners(gray: np.ndarray, board: Board, border_px: int = 10):
     """Sub-pixel checkerboard corners as (N, 1, 2) float32, or None if the board is not found.
 
@@ -66,7 +91,9 @@ def find_corners(gray: np.ndarray, board: Board, border_px: int = 10):
         gray, board.pattern_size,
         flags=cv2.CALIB_CB_NORMALIZE_IMAGE | cv2.CALIB_CB_EXHAUSTIVE | cv2.CALIB_CB_ACCURACY)
     if ok:
-        return None if near_border(corners) else corners.astype(np.float32)
+        if near_border(corners):
+            return None
+        return canonical_corner_order(gray, corners.astype(np.float32), board)
     # Fallback: classic detector + sub-pixel refinement
     ok, corners = cv2.findChessboardCorners(
         gray, board.pattern_size, flags=cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE)
@@ -74,7 +101,7 @@ def find_corners(gray: np.ndarray, board: Board, border_px: int = 10):
         return None
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 1e-4)
     corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-    return None if near_border(corners) else corners
+    return None if near_border(corners) else canonical_corner_order(gray, corners, board)
 
 
 @dataclass

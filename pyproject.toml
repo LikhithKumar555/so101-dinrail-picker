@@ -6,6 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "so101-dinrail-picker"
 version = "0.1.0"
 requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "scipy",
+    "mujoco>=3.3",
+    "opencv-python-headless",
+    "pyyaml",
+    "pillow",
+    "matplotlib",
+    "ultralytics",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["sim", "perception"]
