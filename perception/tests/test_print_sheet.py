@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import pytest
 
-from so101_perception.pose_estimation import Camera, estimate_block_pose
+from so101_perception.pose_estimation import Camera, estimate_block_pose, is_plausible_block
 from so101_perception.print_sheet import (A4_H_MM, A4_W_MM, LAYOUT, PAGE_MARGIN_MM, SHEET_BOARD,
                                           background_rects_mm, block_corners_mm, look_at_sheet, page_to_board,
                                           pose_from_corners, quiet_zone_rect_mm, rasterize_sheet,
@@ -76,3 +76,8 @@ def test_true_corners_through_estimated_camera_give_true_poses(sheet):
         assert abs(np.degrees(d_yaw)) < 0.3
         assert abs(est.width_mm - width) < 0.2
         assert abs(est.length_mm - 45.0) < 0.3
+        assert is_plausible_block(est)
+    # a checkerboard column (75 x 17 mm) seen as a "block" must fail the size check
+    column = np.array([[0.0, -0.015, 0], [0.0, 0.06, 0], [0.017, 0.06, 0], [0.017, -0.015, 0]])
+    fake = estimate_block_pose(cam_est, cam_true.project(column), 2, top_z=0.0)
+    assert not is_plausible_block(fake)

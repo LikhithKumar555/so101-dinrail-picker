@@ -80,20 +80,26 @@ def images_synthetic(n: int, K, dist, size, imgsz: int, seed: int):
         yield f"synthetic_{k:03d}", img
 
 
-def draw_overlay(img_rgb, cam: Camera, poses, matches) -> np.ndarray:
+def draw_box(out, cam: Camera, p, colour, thickness):
+    L, W = p.length_mm / 2000, p.width_mm / 2000
+    cs, sn = np.cos(p.yaw), np.sin(p.yaw)
+    local = np.array([[L, W], [-L, W], [-L, -W], [L, -W]])
+    pts = p.position[:2] + local @ np.array([[cs, sn], [-sn, cs]])
+    px = cam.project(np.column_stack([pts, np.zeros(4)]))
+    cv2.polylines(out, [px.astype(np.int32)], True, colour, thickness)
+
+
+def draw_overlay(img_rgb, cam: Camera, poses, matches, rejected=()) -> np.ndarray:
     out = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+    for p in rejected:                                 # dropped by the size check: thin grey
+        draw_box(out, cam, p, (160, 160, 160), 1)
     for b in LAYOUT:                                   # ground truth in green
         px = cam.project(np.column_stack([page_to_board(block_corners_mm(b)), np.zeros(4)]))
         cv2.polylines(out, [px.astype(np.int32)], True, (0, 255, 0), 1)
     colours = [(0, 200, 255), (255, 0, 255), (255, 80, 0)]
     for k, p in enumerate(poses):                      # detections, labelled with their error
         c = cam.project(np.array([[p.position[0], p.position[1], 0.0]]))[0]
-        L, W = p.length_mm / 2000, p.width_mm / 2000
-        cs, sn = np.cos(p.yaw), np.sin(p.yaw)
-        local = np.array([[L, W], [-L, W], [-L, -W], [L, -W]])
-        pts = p.position[:2] + local @ np.array([[cs, sn], [-sn, cs]])
-        px = cam.project(np.column_stack([pts, np.zeros(4)]))
-        cv2.polylines(out, [px.astype(np.int32)], True, colours[p.cls], 2)
+        draw_box(out, cam, p, colours[p.cls], 2)
         m = matches.get(k)
         txt = f"{CLASS_NAMES[p.cls][6:]} {p.width_mm:.1f}mm" + (f" e={m:.1f}" if m is not None else " FP")
         cv2.putText(out, txt, (int(c[0]) + 8, int(c[1]) - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
@@ -113,10 +119,10 @@ def main(a):
         overlay_path = ROOT / (a.overlay or "media/sheet_test_real_example.png")
 
     loc = BlockLocalizer(ROOT / a.weights, Camera(K, dist, np.eye(4)), imgsz=a.imgsz,
-                         conf=a.conf, top_z=0.0)
+                         conf=a.conf, top_z=0.0, size_check=not a.no_size_check)
     gt = truth()
     rows, best = [], None
-    n_img = n_used = n_fp = n_fp_board = 0
+    n_img = n_used = n_fp = n_fp_board = n_rejected = 0
     print(f"{'image':<22} {'board':>8} {'px/mm*':>7} {'found':>6} {'FP':>3} {'xy med':>7}")
     for name, img in source:
         n_img += 1
@@ -133,6 +139,7 @@ def main(a):
         cam = Camera(K, dist, np.linalg.inv(T_cam_board))
         loc.camera = cam
         poses = loc(img)
+        n_rejected += len(loc.rejected)
 
         # greedy matching: closest detection per true block, each detection used once
         pairs = sorted((np.linalg.norm(p.position[:2] - g[1]) * 1000, i, k)
@@ -168,9 +175,13 @@ def main(a):
             rows.append(row)
         med = f"{np.median(errs):6.2f}" if errs else "     -"
         print(f"{name:<22} {rms:6.2f}px {scale:7.2f} {len(match_of):3d}/12 {len(fps):3d} {med} mm")
-        score = (len(match_of), -len(fps))
+        overlay = draw_overlay(img, cam, poses, det_err, loc.rejected)
+        if a.save_all:                                  # every photo, to inspect misses and FPs
+            Path(a.save_all).mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(Path(a.save_all) / f"{Path(name).stem}_overlay.png"), overlay)
+        score = (len(match_of), -len(fps))              # the README image: the best photo
         if best is None or score > best[0]:
-            best = (score, draw_overlay(img, cam, poses, det_err))
+            best = (score, overlay)
 
     if not rows:
         raise SystemExit("no usable image (the checkerboard was never found)")
@@ -185,6 +196,8 @@ def main(a):
           f"(training: ~{TRAIN_PX_PER_MM})")
     print(f"found                         : {len(found) / n_true:6.1%}   "
           f"({n_fp} false detections, {n_fp_board} of them on the checkerboard)")
+    print(f"rejected by the size check    : {n_rejected} detections"
+          f"{' (size check OFF)' if a.no_size_check else ''}")
     if found:
         for key, label in (("det_class", "detector class"), ("width_class", "width-only class"),
                            ("fused_class", "fused class (pipeline)")):
@@ -225,4 +238,8 @@ if __name__ == "__main__":
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--csv", default=None)
     p.add_argument("--overlay", default=None)
+    p.add_argument("--no-size-check", action="store_true",
+                   help="keep detections whose size in mm cannot be a block")
+    p.add_argument("--save-all", default=None, metavar="DIR",
+                   help="also write an overlay image for every photo into DIR")
     main(p.parse_args())

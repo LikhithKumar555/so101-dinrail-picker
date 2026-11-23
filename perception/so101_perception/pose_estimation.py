@@ -16,12 +16,16 @@ import numpy as np
 
 from so101_perception.calibration import undistort_normalized
 from so101_perception.synthetic import CLASS_NAMES, camera_intrinsics
-from so101_sim.scene import BLOCK_HEIGHT, RAIL_TOP_Z, TABLE_Z
+from so101_sim.scene import BLOCK_DEPTH, BLOCK_HEIGHT, RAIL_TOP_Z, TABLE_Z
 
 # Rail footprint in the base frame (from the scene): blocks detected here sit on the rail
 RAIL_X_RANGE = (0.24 - 0.025, 0.24 + 0.025)
 RAIL_Y_RANGE = (-0.13, 0.03)
 BLOCK_NAMES = ["block_w5", "block_w8", "block_w12"]   # class id -> block type in the scene
+# Physical prior: every terminal block's top face is 45 mm long and 5.2 - 12.2 mm wide.
+# A detection whose measured size is far off cannot be a block (e.g. a checkerboard column).
+LENGTH_TOL_MM = 7.0
+WIDTH_RANGE_MM = (3.5, 14.5)
 
 
 @dataclass
@@ -120,10 +124,12 @@ class BlockLocalizer:
     """Detector + geometry: image in, list of 3D block poses out."""
 
     def __init__(self, weights, camera: Camera, imgsz: int = 960, conf: float = 0.5,
-                 top_z: float | None = None):
+                 top_z: float | None = None, size_check: bool = True):
         from ultralytics import YOLO
         self.model = YOLO(str(weights))
         self.camera, self.imgsz, self.conf, self.top_z = camera, imgsz, conf, top_z
+        self.size_check = size_check
+        self.rejected = []          # detections dropped by the size check in the last call
 
     def __call__(self, image_rgb: np.ndarray) -> list:
         # agnostic NMS: one box per object, even if two width classes both fire on it
@@ -135,7 +141,14 @@ class BlockLocalizer:
                                       r.obb.xyxyxyxy.cpu().numpy()):
                 poses.append(estimate_block_pose(self.camera, pts.reshape(4, 2), int(cls), float(conf),
                                                 top_z=self.top_z))
-        return poses
+        self.rejected = [p for p in poses if self.size_check and not is_plausible_block(p)]
+        return [p for p in poses if not (self.size_check and not is_plausible_block(p))]
+
+
+def is_plausible_block(p: BlockPose) -> bool:
+    """Size check in millimetres - possible only because the 3D pose is metric."""
+    return (abs(p.length_mm - BLOCK_DEPTH * 1000) <= LENGTH_TOL_MM
+            and WIDTH_RANGE_MM[0] <= p.width_mm <= WIDTH_RANGE_MM[1])
 
 
 def describe(p: BlockPose) -> str:
