@@ -1,0 +1,15 @@
+# The SO-101 arm has only 5 joints. KDL (MoveIt's default IK) assumes it can reach any 6-DoF
+# pose and fails on arms like this. pick_ik is a numerical solver that minimises a weighted cost,
+# so it can trade orientation for position - and its "global" mode searches for a solution
+# from many random starts (like the random restarts in our own IK).
+arm:
+  kinematics_solver: pick_ik/PickIkPlugin
+  kinematics_solver_timeout: 0.05
+  mode: global
+  position_scale: 1.0
+  rotation_scale: 0.5
+  position_threshold: 0.001      # m
+  orientation_threshold: 0.01    # rad
+  cost_threshold: 0.001
+  minimal_displacement_weight: 0.0
+  gd_step_size: 0.0001
