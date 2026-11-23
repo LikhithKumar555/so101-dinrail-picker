@@ -89,15 +89,22 @@ def _in_rail_region(p) -> bool:
 
 
 def estimate_block_pose(camera: Camera, corners_px: np.ndarray, cls: int,
-                        confidence: float = 1.0) -> BlockPose:
-    """Oriented box of a block's top face (4 corner pixels) -> 3D block pose in the base frame."""
-    z_table_top = TABLE_Z + BLOCK_HEIGHT
-    z_rail_top = RAIL_TOP_Z + BLOCK_HEIGHT
-    # first assume the block stands on the table; if it lands on the rail footprint, redo it
-    pts = camera.backproject_to_plane(corners_px, z_table_top)
-    on_rail = _in_rail_region(pts.mean(axis=0))
-    if on_rail:
-        pts = camera.backproject_to_plane(corners_px, z_rail_top)
+                        confidence: float = 1.0, top_z: float | None = None) -> BlockPose:
+    """Oriented box of a block's top face (4 corner pixels) -> 3D block pose in the base frame.
+
+    top_z: height of the top-face plane in the base frame. None = the robot cell (table or
+    rail, decided from where the block lands). A number = a known flat surface, e.g. 0.0 for
+    the printed test sheet (step 4.2b), whose frame is the base frame there.
+    """
+    if top_z is not None:
+        pts = camera.backproject_to_plane(corners_px, top_z)
+        on_rail = False
+    else:
+        # first assume the block stands on the table; if it lands on the rail footprint, redo it
+        pts = camera.backproject_to_plane(corners_px, TABLE_Z + BLOCK_HEIGHT)
+        on_rail = _in_rail_region(pts.mean(axis=0))
+        if on_rail:
+            pts = camera.backproject_to_plane(corners_px, RAIL_TOP_Z + BLOCK_HEIGHT)
 
     centre_top = pts.mean(axis=0)
     e1, e2 = pts[1] - pts[0], pts[2] - pts[1]
@@ -112,10 +119,11 @@ def estimate_block_pose(camera: Camera, corners_px: np.ndarray, cls: int,
 class BlockLocalizer:
     """Detector + geometry: image in, list of 3D block poses out."""
 
-    def __init__(self, weights, camera: Camera, imgsz: int = 960, conf: float = 0.5):
+    def __init__(self, weights, camera: Camera, imgsz: int = 960, conf: float = 0.5,
+                 top_z: float | None = None):
         from ultralytics import YOLO
         self.model = YOLO(str(weights))
-        self.camera, self.imgsz, self.conf = camera, imgsz, conf
+        self.camera, self.imgsz, self.conf, self.top_z = camera, imgsz, conf, top_z
 
     def __call__(self, image_rgb: np.ndarray) -> list:
         # agnostic NMS: one box per object, even if two width classes both fire on it
@@ -125,7 +133,8 @@ class BlockLocalizer:
         if r.obb is not None and len(r.obb):
             for cls, conf, pts in zip(r.obb.cls.cpu().numpy(), r.obb.conf.cpu().numpy(),
                                       r.obb.xyxyxyxy.cpu().numpy()):
-                poses.append(estimate_block_pose(self.camera, pts.reshape(4, 2), int(cls), float(conf)))
+                poses.append(estimate_block_pose(self.camera, pts.reshape(4, 2), int(cls), float(conf),
+                                                top_z=self.top_z))
         return poses
 
 
