@@ -115,9 +115,17 @@ class CalibrationResult:
     tvecs: list = field(repr=False, default_factory=list)
 
 
-def calibrate(image_points: list, board: Board, image_size: tuple) -> CalibrationResult:
+# Lens distortion models: how many radial terms are estimated (k1 r^2 + k2 r^4 + k3 r^6).
+# More terms fit better INSIDE the area covered by the board, but a high-order polynomial can
+# explode OUTSIDE it (extrapolation) - so a small board or one far from the image corners needs
+# a simpler model. Phones also correct most lens distortion in software already.
+DIST_MODELS = {"full": 0, "k1k2": cv2.CALIB_FIX_K3, "k1": cv2.CALIB_FIX_K2 | cv2.CALIB_FIX_K3}
+
+
+def calibrate(image_points: list, board: Board, image_size: tuple, flags: int = 0) -> CalibrationResult:
     obj = [board.object_points()] * len(image_points)
-    rms, K, dist, rvecs, tvecs = cv2.calibrateCamera(obj, image_points, image_size, None, None)
+    rms, K, dist, rvecs, tvecs = cv2.calibrateCamera(obj, image_points, image_size, None, None,
+                                                     flags=flags)
     per_view = []
     for o, ip, r, t in zip(obj, image_points, rvecs, tvecs):
         proj, _ = cv2.projectPoints(o, r, t, K, dist)
@@ -125,6 +133,38 @@ def calibrate(image_points: list, board: Board, image_size: tuple) -> Calibratio
         per_view.append(np.sqrt(np.mean(np.sum(d ** 2, axis=1))))
     return CalibrationResult(K, dist.ravel(), tuple(image_size), float(rms),
                              np.array(per_view), list(rvecs), list(tvecs))
+
+
+def distortion_check(K, dist, image_size, image_points=()):
+    """Is the distortion model physically sensible over the WHOLE image?
+
+    Returns a dict:
+      corner_shift_px  - how far the model moves the image corners (distorted vs pinhole)
+      monotonic        - the distorted radius must grow with the true radius up to the image
+                         corners; if not, the polynomial folds back (two directions map to the
+                         same pixel) - a sure sign of extrapolation outside the calibrated area
+      coverage         - how far the calibration corners reach towards the image corners
+                         (1.0 = all the way)
+    """
+    K, d = np.asarray(K, float), np.asarray(dist, float).ravel()
+    w, h = image_size
+    fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+    corners = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], float)
+    # normalised pinhole coordinates of the image corners (approximately the true directions)
+    xy = np.column_stack([(corners[:, 0] - cx) / fx, (corners[:, 1] - cy) / fy])
+    obj = np.column_stack([xy, np.ones(4)])
+    proj, _ = cv2.projectPoints(obj, np.zeros(3), np.zeros(3), K, d)
+    shift = float(np.max(np.linalg.norm(proj.reshape(-1, 2) - corners, axis=1)))
+    r_max = float(np.max(np.linalg.norm(xy, axis=1)))
+    k1, k2, k3 = d[0], d[1], d[4] if len(d) > 4 else 0.0
+    r = np.linspace(0, r_max, 400)
+    rd = r * (1 + k1 * r ** 2 + k2 * r ** 4 + k3 * r ** 6)
+    coverage = float("nan")
+    if len(image_points):
+        pts = np.concatenate([np.asarray(p, float).reshape(-1, 2) for p in image_points])
+        r_pts = np.linalg.norm(np.column_stack([(pts[:, 0] - cx) / fx, (pts[:, 1] - cy) / fy]), axis=1)
+        coverage = float(r_pts.max() / r_max)
+    return {"corner_shift_px": shift, "monotonic": bool(np.all(np.diff(rd) > 0)), "coverage": coverage}
 
 
 def homography_rms(corners: np.ndarray, board: Board) -> float:
@@ -143,7 +183,8 @@ def homography_rms(corners: np.ndarray, board: Board) -> float:
 
 def calibrate_robust(image_points: list, board: Board, image_size: tuple,
                      outlier_factor: float = 3.0, outlier_min_px: float = 1.0,
-                     catastrophic_rms: float = 2.0, min_views: int = 8, log=None, names=None):
+                     catastrophic_rms: float = 2.0, min_views: int = 8, log=None, names=None,
+                     flags: int = 0):
     """Calibrate and remove bad views (blurred photos, wrong detections).
 
     0. Pre-filter: views whose corners do not fit a plane-to-image homography are wrong
@@ -169,7 +210,7 @@ def calibrate_robust(image_points: list, board: Board, image_size: tuple,
                 f"(homography RMS {h_rms[i]:.1f} px > {h_limit:.1f} px)")
 
     def run(idx):
-        return calibrate([image_points[i] for i in idx], board, image_size)
+        return calibrate([image_points[i] for i in idx], board, image_size, flags)
 
     res = run(keep)
     log(f"  initial calibration with {len(keep)} images: RMS {res.rms:.3f} px")

@@ -12,7 +12,7 @@ measured. A real arm is an optional final phase. See [ROADMAP.md](ROADMAP.md).
 ![Scripted pick-and-place in MuJoCo](media/sim_pick_place.gif)
 
 > **Status:** work in progress. All numbers below come from **simulation and synthetic images**
-> unless marked **(real)**.
+> unless marked **(real)** - the real-camera rows use real photos of a printed test sheet.
 
 ---
 
@@ -29,6 +29,7 @@ measured. A real arm is an optional final phase. See [ROADMAP.md](ROADMAP.md).
 | Pixel → 3D block pose (100 new scenes, 415 blocks, true camera pose) | Found **99.5 %** (1 false detection), width class correct **99.8 %**, xy error **0.12 / 0.46 mm** (median / p95), yaw error **0.12°** median (0.53° p95); **98.6 % graspable** (≤ 3 mm, ≤ 5°) |
 | Eye-to-hand calibration (answer known in sim) | **20 views**, 0 outliers, 1.34 px RMS: camera position error **2.19 mm**, rotation error **0.345°** → block localisation error on the table **1.00 mm** mean (1.38 mm max) |
 | **Camera-driven pick-and-place** (detector + hand-eye-calibrated camera + own IK) | **60/60 blocks seated** (20/20 per width), nothing about the blocks read from the simulator; perception error (xy) **0.69 mm** median, 1.01 mm max |
+| **Real-camera test (real)**: printed 1:1 sheet, 12 blocks, threshold fixed before the photos | **Phone (31 photos): 84.9 % graspable**, fused class **100 %**, xy error **0.75 / 1.72 mm** (median / p95) · laptop webcam (28 photos): 51.5 % graspable, 1.15 / 3.08 mm · synthetic baseline of the same sheet: 91–92 % · 0 false detections after the size check |
 | IK benchmark, 200 top-down poses (157 reachable) | **Own DLS IK:** 157/157 (100 %), 0.071 mm median error, 4.6 ms · **MoveIt 2 + pick_ik:** 154/157 (98.1 %), 0.563 mm, 7.5 ms, but fails in 52 ms vs 1046 ms |
 
 ## Project status
@@ -43,7 +44,7 @@ measured. A real arm is an optional final phase. See [ROADMAP.md](ROADMAP.md).
   - [x] 4.4 Eye-to-hand calibration in simulation (with RANSAC and a view/noise study)
   - [x] 4.5a Pick-and-place driven by the camera instead of ground truth
   - [x] 4.5b MoveIt 2 configuration + benchmark against my own IK
-  - [ ] 4.2b Real-camera test with a printed 1:1 test sheet
+  - [x] 4.2b Real-camera test with a printed 1:1 test sheet (laptop webcam and phone)
 - [ ] **Phase 7v, Virtual hardware:** STS3215 servo physics model, Feetech protocol emulator, own C++ ros2_control driver
 - [ ] **Realism layer + sim-to-real gap study:** camera noise and latency, calibration errors, ideal vs realistic sim
 - [ ] **Phase 5, Imitation learning:** ACT on sim demonstrations and on a public real SO-101 dataset, compared with the classic pipeline
@@ -140,8 +141,44 @@ the same judge: my FK applied to each returned solution.
 
 ![MoveIt 2 Plan & Execute in RViz](media/moveit_rviz.png)
 
-**Honest limitation:** the detector, pose and hand-eye numbers come from simulation and synthetic
-images. The sim-to-real gap for perception is measured next (4.2b) with the real calibrated webcam.
+### 9. Real-camera test: `print_sheet.py`, `evaluate_sheet_test.py`, `analyze_sheet_errors.py`
+A printed A4 sheet carries a 7 x 4 checkerboard and 12 block top views at known positions (4 per width).
+Per photo: checkerboard + `solvePnP` (IPPE + LM, mirrored corner order detected) with the **real
+intrinsics** gives the paper plane; detector + back-projection give each block's pose; the result is
+scored against the printed layout. A **synthetic dry run** of the same sheet with the same camera model
+is the baseline, and the detection threshold was **fixed from the dry run before any real photo**
+(`experiments/sheet_test_decision.md`).
+
+| | Laptop dry run | Laptop real | Phone dry run | Phone real |
+|---|---|---|---|---|
+| Found | 90.3 % | 54.8 % | 91.4 % | **85.2 %** |
+| Detector class correct | 86.8 % | 46.7 % | 86.3 % | 89.3 % |
+| Fused class (metric width) | 100 % | 100 % | 100 % | **100 %** |
+| xy error median / p95 | 0.36 / 1.07 mm | 1.15 / 3.08 mm | 0.34 / 1.10 mm | **0.75 / 1.72 mm** |
+| Graspable (<= 3 mm, <= 5 deg, right class) | 90.3 % | 51.5 % | 91.4 % | **84.9 %** |
+
+What the test showed, and what was done about it:
+- **Metric size check:** every detection is in millimetres, so boxes that cannot be a block
+  (45 mm long, 5-12 mm wide) are rejected - it removed **all** checkerboard false detections and lost no block.
+- **The detector's class is biased on a flat print:** every class error is "one size too small"
+  (28/28 in the dry run), because a print lacks the side faces that made 3D blocks look wider in training.
+  The **metric width** is unaffected and decides the class: 100 % correct in every run.
+- **Image quality was most of the laptop gap:** with a phone the real-vs-synthetic gap shrank from
+  -39 to -7 points; dark-grey blocks went from 0-46 % to 97-100 % found.
+- **What is left is colour:** printed blue blocks are found in only 6-23 % (97-100 % in the dry run) -
+  printer ink is not the rendered blue. Fix: wider colour randomisation in the training data.
+- **Position error is mostly systematic** (phone: 0.77 mm per block, same in every photo, vs 0.59 mm
+  scatter) and grows with the distance from the checkerboard. A best-fit print scale of about -0.7 % in
+  y (the same direction with both cameras) explains 60 % of it - the printer, not the pipeline.
+- **Calibration lesson:** with board photos only in the image centre, a full distortion model moved the
+  image corners by 1600 px (extrapolation); `calibrate_camera.py` now checks the model over the whole
+  image, and the phone uses `--dist-model k1` (9 px). The sheet result barely changed (planar target:
+  board and blocks share the plane, so intrinsic errors largely cancel).
+
+![Real phone photo: printed truth (green) and detections with their error](media/sheet_test_phone_example.png)
+
+**Honest limitation:** a flat print cannot test block height, side faces, shadows or shiny plastic;
+the detector, pose and hand-eye numbers above it come from simulation.
 
 ---
 
@@ -168,6 +205,7 @@ sim/            MuJoCo models (SO-101 from MuJoCo Menagerie + DIN-rail scenes) a
   tests/        pytest: FK, Jacobian/IK, scene, pick-and-place, URDF<->MJCF consistency
 perception/     so101_perception package: calibration, synthetic data, pose estimation, hand-eye
   scripts/      checkerboard PDF, capture (Windows), calibration, dataset generation, YOLO train/eval,
+                real-camera sheet test (PDF, capture, phone photo preparation, evaluation, error analysis),
                 pose evaluation, hand-eye calibration, camera-driven pick-and-place
   calibration/  camera and hand-eye calibration results (YAML)
   tests/        pytest: calibration, synthetic data, pose estimation, hand-eye
@@ -183,7 +221,7 @@ Tested on Windows 11 + WSL2 (Ubuntu 24.04), Python 3.12, ROS 2 Jazzy, RTX 3050 T
 # Python side (simulation, perception)
 uv venv --python 3.12 .venv && source .venv/bin/activate
 uv pip install -r requirements-lock.txt && uv pip install -e .
-pytest -q                                                  # 29 tests
+pytest -q                                                  # 33 tests
 python sim/scripts/run_pick_place.py --viewer              # watch the scripted pick-and-place
 python perception/scripts/run_camera_pick_place.py --episodes 20   # camera-driven pipeline
 

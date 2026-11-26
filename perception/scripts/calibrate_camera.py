@@ -12,8 +12,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from so101_perception.calibration import (Board, calibrate_robust, find_corners, homography_rms,
-                                          save_camera_info_yaml)
+from so101_perception.calibration import (DIST_MODELS, Board, calibrate_robust, distortion_check,
+                                          find_corners, homography_rms, save_camera_info_yaml)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,7 +46,7 @@ def main(a):
     print("calibrating (normally a few seconds) ...", flush=True)
     t0 = time.time()
     res, keep, rejected = calibrate_robust(pts, board, size, log=lambda m: print(m, flush=True),
-                                           names=[f.name for f in used])
+                                           names=[f.name for f in used], flags=DIST_MODELS[a.dist_model])
     print(f"done in {time.time() - t0:.1f} s")
     for i in rejected:
         print(f"  rejected as outlier: {used[i].name}")
@@ -59,6 +59,15 @@ def main(a):
     print("k1 k2 p1 p2 k3 =", np.round(d, 4))
     hfov = 2 * np.degrees(np.arctan(size[0] / (2 * K[0, 0])))
     print(f"horizontal field of view = {hfov:.1f} deg")
+    chk = distortion_check(K, d, size, [pts[i] for i in keep])
+    print(f"distortion model '{a.dist_model}': shifts the image corners by {chk['corner_shift_px']:.0f} px, "
+          f"monotonic up to the corners: {'yes' if chk['monotonic'] else 'NO'}")
+    print(f"calibration corners reach {chk['coverage']:.0%} of the way to the image corners")
+    too_big = chk["corner_shift_px"] > 0.1 * np.hypot(size[0] / 2, size[1] / 2)   # > 10 % of the radius
+    if not chk["monotonic"] or too_big or chk["coverage"] < 0.8:
+        print("WARNING: the distortion polynomial is not trustworthy near the image corners "
+              "(implausibly large, folds back, or no calibration points there). Use a simpler model "
+              "(--dist-model k1k2 or k1) and/or photograph the board in the image corners.")
 
     out = ROOT / "perception" / "calibration" / f"{a.name}.yaml"
     save_camera_info_yaml(out, res, a.name, board, len(keep))
@@ -92,4 +101,6 @@ if __name__ == "__main__":
     p.add_argument("--rows", type=int, default=6)
     p.add_argument("--square-mm", type=float, required=True, help="MEASURED square size of your print")
     p.add_argument("--name", default="laptop_webcam")
+    p.add_argument("--dist-model", choices=list(DIST_MODELS), default="full",
+                   help="radial distortion terms: full = k1 k2 k3, k1k2 = k3 fixed to 0, k1 = only k1")
     main(p.parse_args())

@@ -1,0 +1,62 @@
+image_width: 1280
+image_height: 964
+camera_name: phone_k1
+camera_matrix:
+  rows: 3
+  cols: 3
+  data:
+  - 870.6530315482681
+  - 0.0
+  - 627.1374901169335
+  - 0.0
+  - 868.3848583870174
+  - 488.9961463560794
+  - 0.0
+  - 0.0
+  - 1.0
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data:
+  - -0.007881172152046223
+  - 0.0
+  - -0.001993121083689606
+  - 0.000494116194502555
+  - 0.0
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+projection_matrix:
+  rows: 3
+  cols: 4
+  data:
+  - 870.6530315482681
+  - 0.0
+  - 627.1374901169335
+  - 0.0
+  - 0.0
+  - 868.3848583870174
+  - 488.9961463560794
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+calibration:
+  rms_reprojection_error_px: 0.5104
+  n_images: 72
+  board_inner_corners:
+  - 7
+  - 4
+  square_size_m: 0.015

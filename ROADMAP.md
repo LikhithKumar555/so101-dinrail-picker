@@ -25,7 +25,7 @@ Pace: ~8 h/week. After every phase: README result row + short GIF/clip + commit.
 | 4.4 | Eye-to-hand calibration (AX=XB, LM refinement, RANSAC, diversity study) | ✅ Done | – |
 | 4.5a | Camera-guided pick & place in sim — 60/60 | ✅ Done | – |
 | 4.5b | MoveIt 2 (pick_ik) + benchmark vs own IK — own 157/157, 0.07 mm; pick_ik 154/157, 0.56 mm | ✅ Done | – |
-| 4.2b | Real-camera test with printed 1:1 sheet | 🟡 Code ready, dry run + print pending | 24 Nov – 13 Dec |
+| 4.2b | Real-camera test with printed 1:1 sheet — phone 84.9 % graspable, 0.75 mm; laptop 51.5 % | ✅ Done | – |
 | 7v | Virtual hardware: servo model, Feetech emulator, C++ ros2_control driver | ⬜ | 14 Dec – 3 Jan |
 | R | Realism layer + sim-to-real gap study | ⬜ | 4 – 17 Jan |
 | 5 | ACT imitation learning (sim demos + real public SO-101 data) | ⬜ | 18 Jan – 7 Feb |
@@ -48,7 +48,7 @@ MoveIt 2 + pick_ik 154/157, 0.563 mm, 7.5 ms (fails in 52 ms).
 Side findings: scoped launch include (`GroupAction`), WSL2 clock jumps fixed (Windows clock −9.19 s).
 **Be able to explain:** why KDL fails on a 5-DoF arm; why failing IK is slow with restarts.
 
-## 4.2b — Real-camera perception test
+## 4.2b — Real-camera perception test ✅
 
 1. `make_test_sheet.py`: A4 PDF with a 7×4 checkerboard (15 mm) + 12 block top views (4 per width) + ground-truth JSON.
 2. `evaluate_sheet_test.py --dry-run 30`: synthetic photos of the same sheet with the real webcam calibration (baseline).
@@ -57,7 +57,10 @@ Side findings: scoped launch include (`GroupAction`), WSL2 clock jumps fixed (Wi
 5. `evaluate_sheet_test.py --images …`: PnP (IPPE + LM) → plane pose; detector + back-projection → errors vs printed truth.
 6. Compare real vs dry run = sim-to-real gap of perception; README row + overlay image.
 
-**Deliverable:** measured perception error with a real lens, noise and lighting.
+**Result:** phone 84.9 % graspable (xy 0.75 mm), laptop 51.5 % (1.15 mm), synthetic baseline 91–92 %.
+Fused class 100 % everywhere; size check removes all false detections. Remaining gaps: printed blue
+(colour randomisation needed, Realism phase) and ~0.8 mm systematic error from the print scale.
+Lessons: pre-registered threshold, calibration coverage + distortion model check, binned phone modes.
 **Be able to explain:** what a flat print tests (camera model, detector) and what it cannot (height, shadows, occlusion).
 
 ## 7v — Virtual hardware (the core of the "realistic" version)

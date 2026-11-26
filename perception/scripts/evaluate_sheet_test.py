@@ -158,14 +158,17 @@ def main(a):
         errs, det_err = [], {}
         for i, (cls, xy, yaw, width) in enumerate(gt):
             row = {"image": name, "block": i, "true_class": cls, "found": i in match_of,
-                   "board_rms_px": round(rms, 3), "px_per_mm_input": round(scale, 3)}
+                   "board_rms_px": round(rms, 3), "px_per_mm_input": round(scale, 3),
+                   "true_x_mm": round(float(xy[0]) * 1000, 3), "true_y_mm": round(float(xy[1]) * 1000, 3)}
             if i in match_of:
                 p = poses[match_of[i]]
                 e_xy = float(np.linalg.norm(p.position[:2] - xy) * 1000)
                 e_yaw = float(abs(np.degrees(wrap_half_pi(p.yaw - yaw))))
                 wc = width_class(p.width_mm, a.width_tol_mm)
                 fused = wc if wc is not None else p.cls              # same rule as the pick-and-place
-                row.update(det_class=p.cls, width_class=wc, fused_class=fused,
+                row.update(est_x_mm=round(float(p.position[0]) * 1000, 3),
+                           est_y_mm=round(float(p.position[1]) * 1000, 3),
+                           det_class=p.cls, width_class=wc, fused_class=fused,
                            conf=round(p.confidence, 3), xy_err_mm=round(e_xy, 3),
                            yaw_err_deg=round(e_yaw, 3), width_mm=round(p.width_mm, 3),
                            width_err_mm=round(p.width_mm - width, 3), length_mm=round(p.length_mm, 3),
