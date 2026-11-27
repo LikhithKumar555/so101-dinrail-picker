@@ -47,6 +47,8 @@ class FeetechBusEmulator:
         self.pending = {}                    # REG_WRITE data, applied by ACTION
         self.overload_time = np.zeros(len(self.ids))
         self.time = 0.0
+        # one physics step of the servos; replaced by the MuJoCo coupling (mujoco_arm.py)
+        self.physics_step = lambda tau_load: self.model.step(tau_load)
         self._sync_registers_to_model()
 
     # ---------------------------------------------------------------- register helpers
@@ -82,6 +84,10 @@ class FeetechBusEmulator:
             md.kp[k] = self._get(m, "P_Coefficient")
             md.kd[k] = self._get(m, "D_Coefficient")
             md.dead_zone[k] = max(self._get(m, "CW_Dead_Zone"), self._get(m, "CCW_Dead_Zone"))
+        # protection limits as arrays, so advance() can check them without touching the registers
+        self._max_temp = np.array([self._get(self.mem[i], "Max_Temperature_Limit") for i in self.ids], float)
+        self._overload_pct = np.array([self._get(self.mem[i], "Overload_Torque") for i in self.ids], float)
+        self._protect_s = np.array([self._get(self.mem[i], "Protection_Time") * 0.01 for i in self.ids])
 
     def _update_present(self, sid: int):
         k, md, m = self._index(sid), self.model, self.mem[sid]
@@ -114,19 +120,21 @@ class FeetechBusEmulator:
         md = self.model
         n = max(1, int(round(seconds / md.dt)))
         for _ in range(n):
-            md.step(tau_load)
+            self.physics_step(tau_load)
             self.time += md.dt
-            for k, sid in enumerate(self.ids):
-                m = self.mem[sid]
-                if md.temperature[k] > self._get(m, "Max_Temperature_Limit") and md.torque_enable[k]:
-                    self._put(m, "Torque_Enable", 0)           # overheat: the servo unloads itself
-                    md.torque_enable[k] = False
-                over = abs(md.duty[k]) * 100 > self._get(m, "Overload_Torque")
-                if self.overload_time[k] >= 0:
-                    self.overload_time[k] = self.overload_time[k] + md.dt if over else 0.0
-                    if self.overload_time[k] > self._get(m, "Protection_Time") * 0.01:
-                        self.overload_time[k] = -1.0          # protection latched
-                        self._sync_registers_to_model()
+            hot = (md.temperature > self._max_temp) & md.torque_enable
+            if hot.any():                                      # overheat: the servo unloads itself
+                for k in np.flatnonzero(hot):
+                    self._put(self.mem[self.ids[k]], "Torque_Enable", 0)
+                md.torque_enable[hot] = False
+            armed = self.overload_time >= 0
+            over = np.abs(md.duty) * 100 > self._overload_pct
+            self.overload_time = np.where(armed, np.where(over, self.overload_time + md.dt, 0.0),
+                                          self.overload_time)
+            tripped = armed & (self.overload_time > self._protect_s)
+            if tripped.any():
+                self.overload_time[tripped] = -1.0             # protection latched
+                self._sync_registers_to_model()
 
     # ---------------------------------------------------------------- protocol
     def handle_bytes(self, data: bytes) -> bytes:

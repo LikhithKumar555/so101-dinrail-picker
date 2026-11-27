@@ -114,10 +114,14 @@ class ServoArray:
         self.supply_voltage = 7.4
 
     # ---------------------------------------------------------------- measurements
+    @staticmethod
+    def to_steps(theta) -> np.ndarray:
+        """Encoder reading for an output angle: 0..4095, 2048 = centre (quantised, wraps)."""
+        return (np.floor(np.asarray(theta) / RAD_PER_STEP + 0.5).astype(int) + STEPS_PER_REV // 2) % STEPS_PER_REV
+
     @property
     def position_steps(self) -> np.ndarray:
-        """What the encoder reports: 0..4095, 2048 = centre (quantised, wraps around)."""
-        return (np.floor(self.theta / RAD_PER_STEP + 0.5).astype(int) + STEPS_PER_REV // 2) % STEPS_PER_REV
+        return self.to_steps(self.theta)
 
     @property
     def velocity_steps(self) -> np.ndarray:
@@ -129,26 +133,36 @@ class ServoArray:
         self.omega[:] = 0.0
 
     # ---------------------------------------------------------------- physics
+    def drive_torque(self, theta, omega, dt: float) -> np.ndarray:
+        """Controller + H-bridge + motor for a given output state -> motor torque at the output.
+
+        Also integrates the winding temperature. Used by step() (own mechanics) and by the
+        MuJoCo coupling (mechanics from the simulator, so theta/omega come from the joints).
+        """
+        p = self.p
+        # the internal controller works on the QUANTISED encoder reading, like the real one
+        err = self.goal_steps - self.to_steps(theta)
+        err = np.where(err > STEPS_PER_REV // 2, err - STEPS_PER_REV, err)
+        err = np.where(err < -STEPS_PER_REV // 2, err + STEPS_PER_REV, err)
+        err = np.where(np.abs(err) <= self.dead_zone, 0, err)
+        duty = (self.kp / 32.0) * err / P_FULL_DUTY_ERROR_STEPS - (self.kd / 32.0) * D_DUTY_PER_RAD_S * omega
+        duty = np.clip(duty, -self.torque_limit, self.torque_limit)
+        duty = np.where(self.torque_enable, duty, 0.0)
+        r = p.r_25 * (1 + COPPER_ALPHA * (self.temperature - 25.0))
+        i = (duty * self.supply_voltage - p.k_e * omega) / r
+        i = np.where(self.torque_enable, np.clip(i, -p.i_max, p.i_max), 0.0)    # H-bridge off: coast
+        self.temperature += dt * (i * i * r - (self.temperature - p.t_ambient) / p.r_th) / p.c_th
+        self.current, self.duty = i, duty
+        return p.k_t * i
+
     def step(self, tau_load=0.0, n_steps: int = 1) -> None:
-        """Advance n_steps * dt. tau_load: torque the load applies to the output [N*m]
-        (e.g. gravity on the link: -m g r cos(theta))."""
+        """Advance n_steps * dt with the model's own mechanics. tau_load: torque the load applies
+        to the output [N*m] (e.g. gravity on the link: -m g r cos(theta))."""
         p, dt = self.p, self.dt
         tau_load = np.broadcast_to(np.asarray(tau_load, float), (self.n,))
         j = p.j_reflected + self.j_load
         for _ in range(n_steps):
-            # internal controller works on the QUANTISED encoder reading, like the real one
-            err = self.goal_steps - self.position_steps
-            err = np.where(err > STEPS_PER_REV // 2, err - STEPS_PER_REV, err)
-            err = np.where(err < -STEPS_PER_REV // 2, err + STEPS_PER_REV, err)
-            err = np.where(np.abs(err) <= self.dead_zone, 0, err)
-            duty = (self.kp / 32.0) * err / P_FULL_DUTY_ERROR_STEPS \
-                - (self.kd / 32.0) * D_DUTY_PER_RAD_S * self.omega
-            duty = np.clip(duty, -self.torque_limit, self.torque_limit)
-            duty = np.where(self.torque_enable, duty, 0.0)
-            r = p.r_25 * (1 + COPPER_ALPHA * (self.temperature - 25.0))
-            i = (duty * self.supply_voltage - p.k_e * self.omega) / r
-            i = np.where(self.torque_enable, np.clip(i, -p.i_max, p.i_max), 0.0)  # H-bridge off: coast
-            tau_m = p.k_t * i
+            tau_m = self.drive_torque(self.theta, self.omega, dt)
             # friction: viscous + dry; a shaft at rest stays at rest until the drive beats dry friction
             drive = tau_m + tau_load - p.b_viscous * self.omega
             stuck = (np.abs(self.omega) < 1e-3) & (np.abs(drive) <= p.tau_coulomb)
@@ -168,9 +182,6 @@ class ServoArray:
             lo, hi = self.phi - half, self.phi + half
             target = np.where(tau_trans > 1e-3, lo, np.where(tau_trans < -1e-3, hi, self.theta))
             self.theta = np.clip(target, lo, hi)
-            # heating of the winding
-            self.temperature += dt * (i * i * r - (self.temperature - p.t_ambient) / p.r_th) / p.c_th
-            self.current, self.duty = i, duty
 
     # ---------------------------------------------------------------- helpers for tests and plots
     def steady_state_error_steps(self, tau_load: float) -> float:
