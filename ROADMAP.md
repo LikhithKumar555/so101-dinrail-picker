@@ -26,7 +26,7 @@ Pace: ~8 h/week. After every phase: README result row + short GIF/clip + commit.
 | 4.5a | Camera-guided pick & place in sim — 60/60 | ✅ Done | – |
 | 4.5b | MoveIt 2 (pick_ik) + benchmark vs own IK — own 157/157, 0.07 mm; pick_ik 154/157, 0.56 mm | ✅ Done | – |
 | 4.2b | Real-camera test with printed 1:1 sheet — phone 84.9 % graspable, 0.75 mm; laptop 51.5 % | ✅ Done | – |
-| 7v | Virtual hardware: servo model, Feetech emulator, C++ ros2_control driver | ⬜ | 14 Dec – 3 Jan |
+| 7v | Virtual hardware: servo model, Feetech emulator, C++ ros2_control driver — 100 Hz, 0.66° rms tracking, MoveIt on the virtual bus | ✅ Done (28 Nov, ahead of plan) | – |
 | R | Realism layer + sim-to-real gap study | ⬜ | 4 – 17 Jan |
 | 5 | ACT imitation learning (sim demos + real public SO-101 data) | ⬜ | 18 Jan – 7 Feb |
 | 6 | Release: Docker, GitHub Actions CI, video, final README | ⬜ | 8 – 21 Feb |
@@ -63,25 +63,32 @@ Fused class 100 % everywhere; size check removes all false detections. Remaining
 Lessons: pre-registered threshold, calibration coverage + distortion model check, binned phone modes.
 **Be able to explain:** what a flat print tests (camera model, detector) and what it cannot (height, shadows, occlusion).
 
-## 7v — Virtual hardware (the core of the "realistic" version)
+## 7v — Virtual hardware ✅
 
-1. **Servo physics model (STS3215):** DC motor + 1:345 gearbox from datasheet values
-   (Kt, R, rated current), Coulomb + viscous friction, backlash, speed and torque limits,
-   12-bit encoder quantization, internal P-controller, I²R thermal model, stall/overheat protection.
-2. **Feetech protocol emulator:** Python, virtual serial port (pty), 6 IDs, real register map,
-   PING / READ / WRITE / SYNC_WRITE, checksums, bus timing at 1 Mbps, injectable latency and packet loss.
-   Its motors are the MuJoCo joints.
-3. **C++ protocol library:** packet encode/decode + checksum, gtest unit tests.
-4. **C++ ros2_control `SystemInterface` (`so101_hardware`):** lifecycle, SyncWrite goals,
-   read position / load / temperature.
-5. **Bringup:** launch argument `hardware:=mock|emulator|feetech`.
-6. **Safety:** safety node reacts to emulator-injected over-temperature and comms timeouts.
-7. **Integration test:** send a trajectory, check tracking within tolerance.
+1. **7v.1 Servo physics model (STS3215):** DC motor + 1:345 gearbox from datasheet values
+   (k_t 0.785 N·m/A, R 3.04 Ω), dry + viscous friction, backlash, reflected inertia, 12-bit encoder,
+   internal P controller, I²R thermal model, overload/overheat protection. **Feetech protocol emulator:**
+   real register map, PING / READ / WRITE / REG_WRITE / ACTION / SYNC_WRITE / SYNC_READ, EEPROM lock.
+2. **7v.2 Virtual serial port:** pty in raw mode, wire timing at 1 Mbps, real-time physics, injectable
+   latency and lost replies; its motors are the MuJoCo joints. Python client: 502 Hz, p99 5.8 ms.
+3. **7v.3 C++17 bus library `feetech_bus` + `feetech_cli`:** status codes instead of exceptions, `poll()`
+   timeouts, stale-reply handling; byte-compatible with the emulator: 499 Hz, 0 timeouts.
+4. **7v.4 ros2_control plugin `so101_hardware`:** lifecycle, one SYNC_READ (registers 56–63) + one
+   SYNC_WRITE per cycle, safe start with read-back, setup retries, one driver per bus (`flock`),
+   telemetry thread for the safety monitor; bringup `hardware:=mock|feetech`, `timeout_ms`;
+   homing tool `go_to_pose.py`; tracking recorder `record_tracking.py`.
 
-**Deliverable:** the same driver that would run a real arm, tested byte-for-byte against an emulator.
-**Be able to explain:** half-duplex bus timing and the control-loop rate limit; ros2_control lifecycle;
-why a P-controlled geared servo has a load-dependent position error (e = τ_load / K_p, plus backlash);
-what an emulator cannot prove (real timing, compliance, gravity load on real links).
+**Result:** MoveIt 2 Plan & Execute over the serial protocol; 100 Hz, tracking 0.66° rms while moving
+(max 2.2°); bus loss → driver stops in 50 ms, safety monitor stops motion on telemetry timeout;
+43 C++ + 64 Python tests.
+**Found on the way (none of it visible with mock hardware):** a 5 ms reply timeout was too tight for
+the Python bus (p99 ~6 ms) → setup retries + 10 ms; a joint limit between two encoder steps made MoveIt
+reject the resting arm → limit with 3 steps of margin; stick-slip of the gripper on the table during
+unfolding → lift-off-first homing.
+**Be able to explain:** half-duplex bus timing and the cycle budget (0.98 + 0.26 ms of 10 ms);
+ros2_control lifecycle and read → update → write; why a P-controlled geared servo has a load-dependent
+position error (e = τ_load / K_p); why setup may retry but the loop may not; what an emulator cannot prove
+(real USB latency, compliance and backlash of real links, real friction).
 
 ## R — Realism layer + sim-to-real gap study
 
@@ -121,7 +128,8 @@ what an emulator cannot prove (real timing, compliance, gravity load on real lin
 
 ## 8 — Optional: real SO-101 follower arm (only if time and budget allow)
 
-Everything above transfers directly: `hardware:=feetech` replaces `hardware:=emulator`.
+Everything above transfers directly: the same `hardware:=feetech` driver, only with `port:=/dev/ttyACM0`,
+`timeout_ms:=5` and the arm's own joint calibration (`zero_steps`, `direction` per joint).
 
 **Parts (follower only, ~€215–260 incl. shipping, prices from Nov 2026):**
 
@@ -139,7 +147,7 @@ Everything above transfers directly: `hardware:=feetech` replaces `hardware:=emu
 **Steps (~4 weeks):**
 1. Order parts, book printer slots, print the follower parts.
 2. Set servo IDs one at a time, assemble, calibrate; first motion.
-3. Own C++ driver on the real arm; MoveIt Plan & Execute on hardware.
+3. Own C++ driver on the real arm (`feetech_cli scan` first, then bringup); MoveIt Plan & Execute on hardware.
 4. Real hand-eye calibration, real picks; compare real vs realistic-sim numbers (validates the twin).
 5. Optional: servo health monitoring (load, current, temperature, safe stop).
 

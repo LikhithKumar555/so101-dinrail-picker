@@ -31,6 +31,9 @@ measured. A real arm is an optional final phase. See [ROADMAP.md](ROADMAP.md).
 | **Camera-driven pick-and-place** (detector + hand-eye-calibrated camera + own IK) | **60/60 blocks seated** (20/20 per width), nothing about the blocks read from the simulator; perception error (xy) **0.69 mm** median, 1.01 mm max |
 | **Real-camera test (real)**: printed 1:1 sheet, 12 blocks, threshold fixed before the photos | **Phone (31 photos): 84.9 % graspable**, fused class **100 %**, xy error **0.75 / 1.72 mm** (median / p95) · laptop webcam (28 photos): 51.5 % graspable, 1.15 / 3.08 mm · synthetic baseline of the same sheet: 91–92 % · 0 false detections after the size check |
 | IK benchmark, 200 top-down poses (157 reachable) | **Own DLS IK:** 157/157 (100 %), 0.071 mm median error, 4.6 ms · **MoveIt 2 + pick_ik:** 154/157 (98.1 %), 0.563 mm, 7.5 ms, but fails in 52 ms vs 1046 ms |
+| STS3215 servo model (from the datasheet) | DC motor + 1:345 gearbox: k_t 0.785 N·m/A, R 3.04 Ω, dry + viscous friction, reflected rotor inertia, 12-bit encoder, internal P controller, I²R heating; reproduces the datasheet's stall torque, no-load speed and rated current; overheat protection switches torque off at 70 °C |
+| Virtual Feetech bus (pseudo-terminal, 1 Mbps wire timing, MuJoCo behind it) | Python client **502 Hz**, p99 5.8 ms · own **C++17 bus library** against it: **499 Hz, 0 timeouts**, p99 6.0 ms |
+| **Own ros2_control driver** (`so101_hardware`) on the virtual bus | **100 Hz**, 2 bus transactions per cycle (1.2 ms wire time) · trajectory tracking **0.66° rms** while moving (max 2.2°), ≤ 0.72° at rest (gravity sag) · **MoveIt 2 Plan & Execute over the serial protocol** · bus loss → driver stops in 50 ms, safety monitor stops motion independently · 43 C++ (gtest) / 64 Python tests in total |
 
 ## Project status
 
@@ -45,7 +48,11 @@ measured. A real arm is an optional final phase. See [ROADMAP.md](ROADMAP.md).
   - [x] 4.5a Pick-and-place driven by the camera instead of ground truth
   - [x] 4.5b MoveIt 2 configuration + benchmark against my own IK
   - [x] 4.2b Real-camera test with a printed 1:1 test sheet (laptop webcam and phone)
-- [ ] **Phase 7v, Virtual hardware:** STS3215 servo physics model, Feetech protocol emulator, own C++ ros2_control driver
+- [x] **Phase 7v, Virtual hardware**
+  - [x] 7v.1 STS3215 servo physics model + Feetech protocol emulator
+  - [x] 7v.2 Virtual serial port in real time, coupled to the MuJoCo arm
+  - [x] 7v.3 C++17 Feetech bus library + command-line tool
+  - [x] 7v.4 ros2_control hardware plugin, `hardware:=mock|feetech`, MoveIt on the virtual bus
 - [ ] **Realism layer + sim-to-real gap study:** camera noise and latency, calibration errors, ideal vs realistic sim
 - [ ] **Phase 5, Imitation learning:** ACT on sim demonstrations and on a public real SO-101 dataset, compared with the classic pipeline
 - [ ] **Phase 6, Release:** Docker, GitHub Actions CI, video
@@ -78,7 +85,9 @@ solver iterations made blocks "walk" on the rail (a simulation artefact, not a c
 | Package | What it does |
 |---|---|
 | `so101_description` | URDF imported reproducibly from SO-ARM100, own `tcp_link` matching the sim TCP (the official frame differs by 2 cm), RViz launch |
-| `so101_bringup` | ros2_control: mock hardware (replaced by a Feetech driver later), joint trajectory controller and gripper controller |
+| `so101_bringup` | ros2_control with `hardware:=mock` or `hardware:=feetech` (virtual or real bus), joint trajectory controller and gripper controller; `go_to_pose.py` (homing), `record_tracking.py` |
+| `feetech_bus` | **C++17** Feetech STS protocol library: packets, checksums, sign-magnitude registers, raw `termios` serial port, timeouts, stale-reply handling; `feetech_cli` |
+| `so101_hardware` | **C++** ros2_control `SystemInterface` plugin for the SO-101 on a Feetech bus (see section 10) |
 | `so101_interfaces` | `ServoTelemetry` message: load, temperature and voltage per servo |
 | `so101_safety` | **C++** safety monitor: debounced overload, temperature, voltage, fail-safe telemetry timeout; latched fault; stop-category-2-style stop through the controller manager; reset only when safe. The rules live in a ROS-free class covered by gtest |
 | `so101_moveit_config` | MoveIt 2: SRDF with a generated collision matrix, OMPL planning, **pick_ik** as IK plugin, `compare_ik_moveit.py` benchmark client |
@@ -180,6 +189,59 @@ What the test showed, and what was done about it:
 **Honest limitation:** a flat print cannot test block height, side faces, shadows or shiny plastic;
 the detector, pose and hand-eye numbers above it come from simulation.
 
+### 10. Virtual hardware: `sim/so101_sim/feetech/`, `feetech_bus`, `so101_hardware`
+The goal: the software that would drive a real arm, tested byte for byte, without buying one.
+```
+MoveIt 2 / demo scripts
+  -> JointTrajectoryController (ros2_control, 100 Hz)
+  -> so101_hardware  (C++ plugin: SYNC_READ state, SYNC_WRITE goals)
+  -> feetech_bus     (C++: Feetech STS protocol over a raw serial port)
+  -> /tmp/so101_bus  (pseudo-terminal)      | a real arm: /dev/ttyACM0, same code
+  -> Python emulator of 6 STS3215 servos (register map, protections, 1 Mbps wire timing)
+  -> servo physics model -> torque on the MuJoCo joints
+```
+- **Servo model (7v.1):** each STS3215 is a DC motor behind a 1:345 gearbox. The motor constants come
+  from the datasheet (stall torque, no-load speed, rated current), friction from the rated operating
+  point, the reflected rotor inertia (J·N²) enters MuJoCo as joint armature. The internal P controller
+  explains a load-dependent position error **e = τ_load / K_p**; I²R heating and the overload and
+  overheat protections behave like the firmware's.
+- **Virtual bus (7v.2):** a pseudo-terminal in raw mode, so bytes like 0x03 and 0x0D pass unchanged;
+  every reply is delayed by its wire time at 1 Mbps; the physics runs against the wall clock.
+  Latency and lost replies can be injected (`--latency-ms`, `--drop-rate`).
+- **C++ bus library (7v.3):** no exceptions in the loop (status codes), `poll()` timeouts, and before each
+  request the input is flushed, so a late reply to an earlier request is never taken as the answer.
+- **ros2_control plugin (7v.4):** one control cycle = **one SYNC_READ** of registers 56–63 (position,
+  velocity, load, voltage, temperature of all 6 servos, 0.98 ms) + **one SYNC_WRITE** of the goals
+  (0.26 ms). Lifecycle: *configure* checks every servo; *activate* is a **safe start** (goal := present
+  position, read back, then torque on); *deactivate* and bus errors leave the servos holding their last
+  goal. Telemetry for the safety monitor is published from its own thread, so the control loop never
+  waits on DDS. The joint calibration (`zero_steps`, `direction`) is a parameter per joint, so a real
+  arm only needs its own values and `port:=/dev/ttyACM0`.
+
+![Servo model against the datasheet, P-control sag and overheat protection](media/servo_model.png)
+
+**Tracking over the virtual bus** (demo trajectory, 100 Hz): the error grows with joint speed
+(following error of a P-controlled servo plus one cycle of delay), shoulder and elbow keep a small
+static offset under gravity, and steps of 0.088° show the 12-bit encoder.
+With mock hardware, the same plot is a flat zero line.
+
+| Joint | rms error | max error | final error |
+|---|---|---|---|
+| shoulder_pan | 0.20° | 0.65° | 0.09° |
+| shoulder_lift | 0.74° | 2.17° | 0.04° |
+| elbow_flex | 0.83° | 2.11° | 0.72° |
+| wrist_flex | 0.26° | 0.85° | 0.16° |
+| wrist_roll | 0.45° | 1.38° | 0.00° |
+
+![Reference vs measured joint angles over the virtual Feetech bus](media/ros2_control_feetech_tracking.png)
+
+Run it (three terminals):
+```bash
+python sim/scripts/run_virtual_bus.py --viewer                              # venv: 6 virtual servos
+ros2 launch so101_moveit_config demo.launch.py hardware:=feetech            # ROS: driver + MoveIt
+ros2 run so101_bringup go_to_pose.py park                                    # homing after power-up
+```
+
 ---
 
 ## Engineering notes
@@ -195,21 +257,54 @@ about 9.2 s each. Cause: the Windows clock was off by −9.19 s, so Hyper-V time
 Windows Time service on auto start, `systemd-timesyncd` disabled (one clock master), clock source
 `hyperv_clocksource_tsc_page`.
 
+**Safe start needs a read-back.** A servo keeps its last goal in RAM even with torque off; switching
+torque on would make it jump there. So the driver writes the *present* position as the goal first. But
+SYNC_WRITE is a broadcast without a reply, so the goals are **read back** before torque goes on - and
+write + read-back are repeated *together*, because if the write was lost, reading again never helps.
+A test shows the hazard: without safe start the (fake) servo jumps 97°.
+
+**Setup may retry, the control loop may not wait.** On the laptop the first start failed: one bus reply
+took longer than the 5 ms timeout (the Python bus has a p99 of about 6 ms under WSL), and safe start
+gave up correctly. Fix: start-up steps retry up to 3 times (nothing moves yet), the 100 Hz loop never
+retries (a late cycle delays every controller; 5 lost replies in a row = 50 ms blind → stop), and the
+reply timeout became a launch argument (`timeout_ms`, 10 ms for the virtual bus; a real USB adapter answers faster, so 5 ms there).
+Checked with injected faults: 4 ms extra latency + 2 % lost replies → every start succeeds after 1 retry.
+
+**One program per serial bus.** Two programs on one port take each other's replies, and both see random
+timeouts. The driver, the CLI and the Python client lock the port with `flock()`; a second program gets
+"in use by another program". The kernel drops the lock when the process ends, even after a crash
+(`TIOCEXCL` would stay set while the virtual bus keeps its end of the pty open).
+
+**A joint limit the encoder cannot show.** MoveIt refused to plan on the virtual bus: "Joint
+'shoulder_lift' ... outside bounds by [-1.74567], should be in the range [-1.74533]". The arm rests on its
+mechanical stop at -100°, and -1.74533 rad lies *between* two encoder steps (1.534 mrad each): the nearest
+reading is step -1138 = -1.74567 rad. MoveIt does not tolerate any start state outside the limits. Fix:
+the software limit has to contain every pose the arm can rest in, *plus the measurement resolution* →
+lower limit -1.7500 rad (3 steps). Moving 'park' off the stop instead was rejected: the shoulder then
+holds the arm at ~47 % PWM all the time (heat) and sags 1.3°. Mock hardware cannot show any of this.
+
+**Stick-slip when unfolding.** After power-up the gripper lies on the table. A straight joint move to
+'park' turns the wrist up first and presses the gripper into the table: friction holds it, the wrist servo
+sits at 100 % duty for 1.6 s, then it breaks loose and jumps 0.66 rad - the trajectory controller aborts
+on > 0.2 rad path error (a tracking error is a contact detector). `go_to_pose.py` therefore lifts the
+shoulder first and only then moves to the pose, like a real robot unfolding.
+
 ---
 
 ## Repository layout
 ```
 sim/            MuJoCo models (SO-101 from MuJoCo Menagerie + DIN-rail scenes) and so101_sim package
   so101_sim/    kinematics.py, ik.py, scene.py, pick_place.py
-  scripts/      demos (IK, scene viewer, pick-and-place runs), IK benchmark
-  tests/        pytest: FK, Jacobian/IK, scene, pick-and-place, URDF<->MJCF consistency
+    feetech/    STS3215 servo model, Feetech protocol + emulator, virtual serial bus, MuJoCo coupling, client
+  scripts/      demos (IK, scene viewer, pick-and-place runs), IK benchmark, virtual bus, servo model report
+  tests/        pytest: FK, Jacobian/IK, scene, pick-and-place, URDF<->MJCF consistency, servo model, protocol, bus
 perception/     so101_perception package: calibration, synthetic data, pose estimation, hand-eye
   scripts/      checkerboard PDF, capture (Windows), calibration, dataset generation, YOLO train/eval,
                 real-camera sheet test (PDF, capture, phone photo preparation, evaluation, error analysis),
                 pose evaluation, hand-eye calibration, camera-driven pick-and-place
   calibration/  camera and hand-eye calibration results (YAML)
   tests/        pytest: calibration, synthetic data, pose estimation, hand-eye
-ros2_ws/src/    ROS 2 packages (description, bringup, interfaces, safety, moveit_config)
+ros2_ws/src/    ROS 2 packages (description, bringup, interfaces, safety, moveit_config, feetech_bus, so101_hardware)
 experiments/    trial logs (CSV) and benchmark results (JSON)
 media/          GIFs and images for this README
 ROADMAP.md      plan and status of all phases
@@ -221,17 +316,26 @@ Tested on Windows 11 + WSL2 (Ubuntu 24.04), Python 3.12, ROS 2 Jazzy, RTX 3050 T
 # Python side (simulation, perception)
 uv venv --python 3.12 .venv && source .venv/bin/activate
 uv pip install -r requirements-lock.txt && uv pip install -e .
-pytest -q                                                  # 33 tests
+pytest -q                                                  # 64 tests
 python sim/scripts/run_pick_place.py --viewer              # watch the scripted pick-and-place
 python perception/scripts/run_camera_pick_place.py --episodes 20   # camera-driven pipeline
 
 # ROS 2 side (separate terminal, without the venv)
 source /opt/ros/jazzy/setup.bash && cd ros2_ws
 colcon build --symlink-install && source install/setup.bash
-colcon test --packages-select so101_safety                # C++ unit tests
-ros2 launch so101_bringup bringup.launch.py                # robot + controllers + RViz
+colcon test --packages-select so101_safety feetech_bus so101_hardware   # C++ unit tests
+ros2 launch so101_bringup bringup.launch.py                # robot + controllers + RViz (mock hardware)
 ros2 launch so101_safety safety.launch.py                  # safety monitor + simulated telemetry
 ros2 launch so101_moveit_config demo.launch.py             # MoveIt 2 + RViz (Plan & Execute)
+```
+
+**Virtual hardware** (venv terminal + ROS terminals):
+```bash
+python sim/scripts/run_virtual_bus.py --viewer                       # venv: virtual servos at /tmp/so101_bus
+ros2 launch so101_moveit_config demo.launch.py hardware:=feetech     # ROS: own driver + MoveIt
+ros2 launch so101_safety safety.launch.py fake_telemetry:=false      # ROS: safety monitor on real telemetry
+ros2 run so101_bringup go_to_pose.py park                             # ROS: homing after power-up
+ros2 run so101_bringup demo_trajectory.py                             # ROS: demo trajectory
 ```
 
 **IK benchmark** (needs both environments):
@@ -242,8 +346,8 @@ python sim/scripts/ik_benchmark.py report                  # venv: comparison ta
 ```
 
 ## Tech stack
-Python, NumPy, SciPy, MuJoCo · ROS 2 Jazzy, ros2_control, MoveIt 2 (OMPL, pick_ik), rclcpp (C++17),
-gtest · OpenCV · Ultralytics YOLO26-OBB, PyTorch · LeRobot (ACT, coming next) · WSL2
+Python, NumPy, SciPy, MuJoCo · ROS 2 Jazzy, ros2_control (own hardware plugin, pluginlib), MoveIt 2
+(OMPL, pick_ik), rclcpp (C++17), gtest · Feetech STS serial protocol, POSIX termios / pseudo-terminals · OpenCV · Ultralytics YOLO26-OBB, PyTorch · LeRobot (ACT, coming next) · WSL2
 
 ## Credits and licences
 - SO-101 URDF and meshes: [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) (Apache-2.0)
