@@ -90,6 +90,8 @@ Bytes read(uint8_t id, const Register & r);
 Bytes write(uint8_t id, const Register & r, int32_t value);
 Bytes sync_write(const Register & r, const std::vector<std::pair<uint8_t, int32_t>> & values);
 Bytes sync_read(const Register & r, const std::vector<uint8_t> & ids);
+// SYNC_READ of `length` consecutive bytes from `address`: several registers in one transaction
+Bytes sync_read_block(uint8_t address, uint8_t length, const std::vector<uint8_t> & ids);
 
 struct Packet
 {

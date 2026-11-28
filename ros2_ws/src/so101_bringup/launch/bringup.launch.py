@@ -1,7 +1,12 @@
 """SO-101 with ros2_control: robot_state_publisher + controller manager + controllers (+ RViz).
 
-  ros2 launch so101_bringup bringup.launch.py                  # mock hardware + RViz
+  ros2 launch so101_bringup bringup.launch.py                       # mock hardware + RViz
   ros2 launch so101_bringup bringup.launch.py rviz:=false
+  ros2 launch so101_bringup bringup.launch.py hardware:=feetech     # Feetech bus at /tmp/so101_bus
+  ros2 launch so101_bringup bringup.launch.py hardware:=feetech port:=/dev/ttyACM0   # real arm
+
+hardware:=feetech needs something on the serial port first, e.g. the virtual bus:
+  python sim/scripts/run_virtual_bus.py --viewer
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -15,16 +20,22 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     desc = FindPackageShare("so101_description")
     bringup = FindPackageShare("so101_bringup")
-    use_mock = LaunchConfiguration("use_mock_hardware")
 
     robot_description = ParameterValue(
         Command(["xacro ", PathJoinSubstitution([desc, "urdf", "so101.urdf.xacro"]),
-                 " use_mock_hardware:=", use_mock]),
+                 " hardware:=", LaunchConfiguration("hardware"),
+                 " port:=", LaunchConfiguration("port"),
+                 " timeout_ms:=", LaunchConfiguration("timeout_ms")]),
         value_type=str)
     controllers = PathJoinSubstitution([bringup, "config", "controllers.yaml"])
 
     return LaunchDescription([
-        DeclareLaunchArgument("use_mock_hardware", default_value="true"),
+        DeclareLaunchArgument("hardware", default_value="mock",
+                              description="mock (no physics) or feetech (serial servo bus)"),
+        DeclareLaunchArgument("port", default_value="/tmp/so101_bus",
+                              description="serial device for hardware:=feetech"),
+        DeclareLaunchArgument("timeout_ms", default_value="10",
+                              description="bus reply timeout per transaction (hardware:=feetech)"),
         DeclareLaunchArgument("rviz", default_value="true"),
 
         Node(package="robot_state_publisher", executable="robot_state_publisher",

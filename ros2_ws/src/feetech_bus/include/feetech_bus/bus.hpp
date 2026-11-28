@@ -53,6 +53,11 @@ public:
   Status sync_read(
     const Register & r, const std::vector<uint8_t> & ids, std::vector<int32_t> * values,
     uint8_t * error_bits = nullptr);
+  // raw bytes [address, address + length) of every servo; data[k] belongs to ids[k].
+  // Decode a register inside the block with decode_value(reg, data[k].data() + reg.address - address).
+  Status sync_read_block(
+    uint8_t address, uint8_t length, const std::vector<uint8_t> & ids,
+    std::vector<Bytes> * data, uint8_t * error_bits = nullptr);
 
   const BusStats & stats() const {return stats_;}
 

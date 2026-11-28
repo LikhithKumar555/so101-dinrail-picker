@@ -1,5 +1,7 @@
-"""Everything for MoveIt in one go: robot + ros2_control (mock hardware) + move_group + RViz
-with the MotionPlanning panel.   ros2 launch so101_moveit_config demo.launch.py
+"""Everything for MoveIt in one go: robot + ros2_control + move_group + RViz with the
+MotionPlanning panel.
+  ros2 launch so101_moveit_config demo.launch.py                     # mock hardware
+  ros2 launch so101_moveit_config demo.launch.py hardware:=feetech   # virtual (or real) servo bus
 """
 import os
 import sys
@@ -22,12 +24,19 @@ def generate_launch_description():
     rviz_cfg = os.path.join(get_package_share_directory("so101_moveit_config"), "config", "moveit.rviz")
     return LaunchDescription([
         DeclareLaunchArgument("rviz", default_value="true"),
+        DeclareLaunchArgument("hardware", default_value="mock"),
+        DeclareLaunchArgument("port", default_value="/tmp/so101_bus"),
+        DeclareLaunchArgument("timeout_ms", default_value="10"),
         # GroupAction scopes the include: its rviz:=false stays inside the group.
         # Without it, launch arguments of an include leak into this file and
         # would switch off the MoveIt RViz below as well.
         GroupAction([
             IncludeLaunchDescription(PythonLaunchDescriptionSource(bringup),
-                                     launch_arguments={"rviz": "false"}.items()),
+                                     launch_arguments={
+                                         "rviz": "false",
+                                         "hardware": LaunchConfiguration("hardware"),
+                                         "port": LaunchConfiguration("port"),
+                                         "timeout_ms": LaunchConfiguration("timeout_ms")}.items()),
         ]),
         Node(package="moveit_ros_move_group", executable="move_group", output="screen",
              parameters=[cfg.to_dict()]),

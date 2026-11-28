@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="so101">
-  <xacro:arg name="use_mock_hardware" default="true"/>
+  <!-- hardware:=mock (default) or hardware:=feetech port:=/tmp/so101_bus -->
+  <xacro:arg name="hardware" default="mock"/>
+  <xacro:arg name="port" default="/tmp/so101_bus"/>
+  <xacro:arg name="timeout_ms" default="10"/>
 
   <xacro:include filename="$(find so101_description)/urdf/so101_arm.urdf"/>
   <xacro:include filename="$(find so101_description)/urdf/so101.ros2_control.xacro"/>
@@ -17,5 +20,5 @@
     <origin xyz="0.012 -0.000218 -0.098127" rpy="0 1.5708 0"/>
   </joint>
 
-  <xacro:so101_ros2_control use_mock_hardware="$(arg use_mock_hardware)"/>
+  <xacro:so101_ros2_control hardware="$(arg hardware)" port="$(arg port)" timeout_ms="$(arg timeout_ms)"/>
 </robot>

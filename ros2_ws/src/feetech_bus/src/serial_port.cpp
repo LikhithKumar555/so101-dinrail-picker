@@ -2,6 +2,7 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -38,6 +39,18 @@ bool SerialPort::open(const std::string & device, int baud, std::string * error)
   fd_ = ::open(device.c_str(), O_RDWR | O_NOCTTY | O_CLOEXEC);
   if (fd_ < 0) {
     if (error) {*error = device + ": " + std::strerror(errno);}
+    return false;
+  }
+  // One program per bus. Two programs reading the same port steal each other's replies: both
+  // see random timeouts and neither knows why. flock() takes an exclusive lock on the port; a
+  // second program gets EWOULDBLOCK at once. The kernel drops the lock when this fd is closed -
+  // also when the program crashes - so a crash never leaves the port locked.
+  if (flock(fd_, LOCK_EX | LOCK_NB) != 0) {
+    if (error) {
+      *error = device + ": " + (errno == EWOULDBLOCK ?
+        std::string("in use by another program (one driver per bus)") : std::strerror(errno));
+    }
+    close();
     return false;
   }
   termios tio{};

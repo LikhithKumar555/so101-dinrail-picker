@@ -156,3 +156,29 @@ TEST_F(BusPty, LateReplyIsNotTakenForTheNextAnswer)
   ASSERT_EQ(bus.read(2, reg::kPresentPosition, &v), feetech::Status::kOk);
   EXPECT_EQ(v, 2050);                                    // the real answer, not the stale 777
 }
+
+TEST_F(BusPty, BlockReadDecodesSeveralRegistersFromOneReply)
+{
+  // Present_Position (56..57) and Present_Velocity (58..59) of two servos in ONE transaction
+  ASSERT_EQ(bus.write(2, reg::kPresentVelocity, -100), feetech::Status::kOk);
+  std::vector<feetech::Bytes> data;
+  const auto before = bus.stats().transactions;
+  ASSERT_EQ(bus.sync_read_block(56, 4, {1, 2}, &data), feetech::Status::kOk);
+  EXPECT_EQ(bus.stats().transactions, before + 1);
+  ASSERT_EQ(data.size(), 2u);
+  ASSERT_EQ(data[1].size(), 4u);
+  const uint8_t * d2 = data[1].data();
+  EXPECT_EQ(feetech::decode_value(reg::kPresentPosition, d2 + 0), 2050);
+  EXPECT_EQ(feetech::decode_value(reg::kPresentVelocity, d2 + 2), -100);   // sign bit 15
+  EXPECT_EQ(feetech::decode_value(reg::kPresentPosition, data[0].data()), 2049);
+}
+
+TEST_F(BusPty, SecondProgramOnTheSamePortIsRefused)
+{
+  feetech::FeetechBus second{20ms};
+  std::string error;
+  EXPECT_FALSE(second.open(fake.device(), 1000000, &error));
+  EXPECT_NE(error.find("in use by another program"), std::string::npos) << error;
+  bus.close();                                          // first one lets go ...
+  EXPECT_TRUE(second.open(fake.device(), 1000000, &error)) << error;   // ... now it works
+}

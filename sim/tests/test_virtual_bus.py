@@ -58,3 +58,11 @@ def test_dropped_replies_are_timeouts(tmp_path):
     finally:
         c.close()
         vb.stop()
+
+
+def test_second_client_on_the_same_bus_is_refused(bus):
+    vb, c = bus                                # c already has the port
+    with pytest.raises(RuntimeError, match="in use by another program"):
+        FeetechClient(vb.device)
+    c.close()
+    FeetechClient(vb.device).close()           # free again once the first one let go

@@ -1,0 +1,9 @@
+<!-- pluginlib: tells the controller manager which library holds the class named in
+     <ros2_control><hardware><plugin>so101_hardware/FeetechSystem</plugin> -->
+<library path="so101_hardware">
+  <class name="so101_hardware/FeetechSystem"
+         type="so101_hardware::FeetechSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>SO-101 arm on a Feetech STS3215 bus: SYNC_READ state, SYNC_WRITE goals, safe start.</description>
+  </class>
+</library>

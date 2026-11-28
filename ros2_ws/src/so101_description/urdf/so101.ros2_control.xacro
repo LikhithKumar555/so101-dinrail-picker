@@ -1,11 +1,17 @@
 <?xml version="1.0"?>
 <!-- ros2_control description: which joints exist, which interfaces they offer, and which
-     hardware plugin talks to them. Only the <plugin> changes between simulation and the
-     real arm (Phase 5): the controllers above it stay exactly the same. -->
+     hardware plugin talks to them. Only the <hardware> block changes between the mock and the
+     Feetech bus (virtual or real arm): the controllers above it stay exactly the same. -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <xacro:macro name="so101_joint" params="name lower upper initial">
+  <!-- id: servo ID on the bus. zero_steps / direction: encoder calibration (0 rad = 2048 steps,
+       angle grows with the count). Exact for the virtual bus; a real arm gets its own values
+       from a calibration run. -->
+  <xacro:macro name="so101_joint" params="name id lower upper initial zero_steps:=2048 direction:=1">
     <joint name="${name}">
+      <param name="id">${id}</param>
+      <param name="zero_steps">${zero_steps}</param>
+      <param name="direction">${direction}</param>
       <command_interface name="position">
         <param name="min">${lower}</param>
         <param name="max">${upper}</param>
@@ -17,25 +23,39 @@
     </joint>
   </xacro:macro>
 
-  <xacro:macro name="so101_ros2_control" params="use_mock_hardware">
+  <!-- hardware: mock    = every command is reported back at once as the state (no physics)
+                 feetech = so101_hardware/FeetechSystem on the serial device `port`: the virtual
+                           bus (/tmp/so101_bus, MuJoCo behind it) or a real arm (/dev/ttyACM0) -->
+  <xacro:macro name="so101_ros2_control" params="hardware port timeout_ms">
     <ros2_control name="so101_system" type="system">
       <hardware>
-        <xacro:if value="${use_mock_hardware}">
-          <!-- Fake hardware: every commanded position is instantly reported back as the state -->
+        <xacro:if value="${hardware == 'mock'}">
           <plugin>mock_components/GenericSystem</plugin>
         </xacro:if>
-        <xacro:unless value="${use_mock_hardware}">
-          <!-- Phase 5: the Feetech STS3215 serial-bus hardware interface goes here -->
-          <plugin>mock_components/GenericSystem</plugin>
+        <xacro:if value="${hardware == 'feetech'}">
+          <plugin>so101_hardware/FeetechSystem</plugin>
+          <param name="device">${port}</param>
+          <param name="baud">1000000</param>
+          <!-- reply timeout per transaction. Real arm over USB: ~1-2 ms per reply, 5 is plenty.
+               Python virtual bus under WSL: p99 ~6 ms, so 10 (= one 100 Hz cycle). -->
+          <param name="timeout_ms">${timeout_ms}</param>
+          <param name="setup_attempts">3</param>          <!-- start-up steps may retry, the loop not -->
+          <param name="max_consecutive_errors">5</param>  <!-- 5 lost replies in a row = 50 ms blind -->
+          <param name="telemetry_rate_hz">20</param>      <!-- /servo_telemetry for the safety monitor -->
+          <param name="release_torque_on_cleanup">false</param>
+        </xacro:if>
+        <xacro:unless value="${hardware in ['mock', 'feetech']}">
+          ${xacro.fatal("hardware must be 'mock' or 'feetech', got '" + hardware + "'")}
         </xacro:unless>
       </hardware>
-      <!-- Limits [rad] are the URDF joint limits; initial values = the folded 'park' pose -->
-      <xacro:so101_joint name="shoulder_pan"  lower="-1.91986" upper="1.91986" initial="0.0"/>
-      <xacro:so101_joint name="shoulder_lift" lower="-1.74533" upper="1.74533" initial="-1.745"/>
-      <xacro:so101_joint name="elbow_flex"    lower="-1.69"    upper="1.69"    initial="-1.658"/>
-      <xacro:so101_joint name="wrist_flex"    lower="-1.65806" upper="1.65806" initial="0.262"/>
-      <xacro:so101_joint name="wrist_roll"    lower="-2.74385" upper="2.84121" initial="0.0"/>
-      <xacro:so101_joint name="gripper"       lower="-0.174533" upper="1.74533" initial="0.0"/>
+      <!-- Limits [rad] = the URDF joint limits (shoulder_lift lower: see so101_arm.urdf);
+           initial values = the folded 'park' pose, resting on the shoulder's mechanical stop -->
+      <xacro:so101_joint name="shoulder_pan"  id="1" lower="-1.91986" upper="1.91986" initial="0.0"/>
+      <xacro:so101_joint name="shoulder_lift" id="2" lower="-1.7500"  upper="1.74533" initial="-1.745"/>
+      <xacro:so101_joint name="elbow_flex"    id="3" lower="-1.69"    upper="1.69"    initial="-1.658"/>
+      <xacro:so101_joint name="wrist_flex"    id="4" lower="-1.65806" upper="1.65806" initial="0.262"/>
+      <xacro:so101_joint name="wrist_roll"    id="5" lower="-2.74385" upper="2.84121" initial="0.0"/>
+      <xacro:so101_joint name="gripper"       id="6" lower="-0.174533" upper="1.74533" initial="0.0"/>
     </ros2_control>
   </xacro:macro>
 </robot>

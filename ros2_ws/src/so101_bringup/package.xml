@@ -16,10 +16,15 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>hardware_interface</exec_depend>  <!-- provides mock_components/GenericSystem -->
   <exec_depend>position_controllers</exec_depend>
+  <exec_depend>python3-matplotlib</exec_depend>  <!-- record_tracking.py plotting -->
+  <exec_depend>python3-numpy</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>so101_description</exec_depend>
+  <exec_depend>so101_hardware</exec_depend>     <!-- hardware:=feetech -->
+  <exec_depend>so101_interfaces</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
   <exec_depend>xacro</exec_depend>

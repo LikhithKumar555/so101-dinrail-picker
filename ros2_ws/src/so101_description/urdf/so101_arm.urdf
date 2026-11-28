@@ -373,7 +373,12 @@
     <parent link="shoulder_link"/>
     <child link="upper_arm_link"/>
     <axis xyz="0 0 1"/>
-    <limit effort="10" velocity="10" lower="-1.74533" upper="1.74533"/>
+    <!-- lower: -1.7500 instead of -1.74533 (-100 deg). The arm rests on its mechanical stop at
+         about -100 deg in 'park' and after power-up. The 12-bit encoder (1.534 mrad per step) cannot
+         show -1.74533 exactly: the nearest reading at the stop is step -1138 = -1.74567 rad, just
+         outside a -1.74533 limit - and MoveIt refuses to plan from a start state outside the limits.
+         -1.7500 leaves 3 encoder steps for that. -->
+    <limit effort="10" velocity="10" lower="-1.7500" upper="1.74533"/>
   </joint>
 
   <!-- Joint from base to shoulder -->

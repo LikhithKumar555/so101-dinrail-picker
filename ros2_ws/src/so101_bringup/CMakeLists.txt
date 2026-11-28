@@ -5,7 +5,7 @@ find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME})
-install(PROGRAMS scripts/demo_trajectory.py
+install(PROGRAMS scripts/demo_trajectory.py scripts/record_tracking.py scripts/go_to_pose.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

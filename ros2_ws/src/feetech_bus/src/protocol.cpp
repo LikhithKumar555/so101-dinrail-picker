@@ -108,7 +108,12 @@ Bytes sync_write(const Register & r, const std::vector<std::pair<uint8_t, int32_
 
 Bytes sync_read(const Register & r, const std::vector<uint8_t> & ids)
 {
-  Bytes params{r.address, r.size};
+  return sync_read_block(r.address, r.size, ids);
+}
+
+Bytes sync_read_block(uint8_t address, uint8_t length, const std::vector<uint8_t> & ids)
+{
+  Bytes params{address, length};
   params.insert(params.end(), ids.begin(), ids.end());
   return make_packet(kBroadcastId, kSyncRead, params);
 }

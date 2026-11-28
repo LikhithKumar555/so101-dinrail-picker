@@ -103,19 +103,33 @@ Status FeetechBus::sync_read(
   const Register & reg, const std::vector<uint8_t> & ids, std::vector<int32_t> * values,
   uint8_t * error_bits)
 {
-  std::vector<Packet> r;
-  const Status s = transact(feetech::sync_read(reg, ids), ids.size(), &r);
+  std::vector<Bytes> data;
+  const Status s = sync_read_block(reg.address, reg.size, ids, &data, error_bits);
   if (s != Status::kOk) {return s;}
   values->assign(ids.size(), 0);
+  for (std::size_t k = 0; k < ids.size(); ++k) {
+    (*values)[k] = decode_value(reg, data[k].data());
+  }
+  return Status::kOk;
+}
+
+Status FeetechBus::sync_read_block(
+  uint8_t address, uint8_t length, const std::vector<uint8_t> & ids,
+  std::vector<Bytes> * data, uint8_t * error_bits)
+{
+  std::vector<Packet> r;
+  const Status s = transact(feetech::sync_read_block(address, length, ids), ids.size(), &r);
+  if (s != Status::kOk) {return s;}
+  data->resize(ids.size());
   uint8_t bits = 0;
   for (std::size_t k = 0; k < ids.size(); ++k) {
     // each servo answers in the listed order; check anyway
     const Packet & p = r[k];
-    if (p.id != ids[k] || p.params.size() != reg.size) {
+    if (p.id != ids[k] || p.params.size() != length) {
       ++stats_.bad_replies;
       return Status::kBadReply;
     }
-    (*values)[k] = decode_value(reg, p.params.data());
+    (*data)[k] = p.params;
     bits |= p.code;
   }
   if (error_bits) {*error_bits = bits;}

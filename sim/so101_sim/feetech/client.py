@@ -7,6 +7,7 @@ a driver has to do on a half-duplex bus:
   3. never wait for a reply to a broadcast (there is none)
   4. treat a missing or broken reply as an error the caller must handle (retry, stop the arm)
 """
+import fcntl
 import os
 import select
 import termios
@@ -25,6 +26,11 @@ class BusTimeout(Exception):
 class FeetechClient:
     def __init__(self, device: str, baud: int = 1_000_000, timeout_s: float = 0.02):
         self.fd = os.open(device, os.O_RDWR | os.O_NOCTTY)
+        try:   # one program per bus, same lock as the C++ driver (released on close or crash)
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(self.fd)
+            raise RuntimeError(f"{device}: in use by another program (one driver per bus)") from None
         tty.setraw(self.fd)
         attrs = termios.tcgetattr(self.fd)
         attrs[4] = attrs[5] = BAUD[baud]                 # input and output speed
@@ -35,7 +41,9 @@ class FeetechClient:
         self.timeouts = 0
 
     def close(self):
-        os.close(self.fd)
+        if self.fd >= 0:                         # safe to call twice
+            os.close(self.fd)                    # also releases the flock
+            self.fd = -1
 
     # ---------------------------------------------------------------- transport
     def _transact(self, request: bytes, n_replies: int):
